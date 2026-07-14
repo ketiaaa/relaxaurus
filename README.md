@@ -1,6 +1,6 @@
 # Relaxaurus
 
-A lightweight Discord bot to start, stop, and check the status of a Palworld dedicated server via RCON and screen sessions.
+A Discord bot to manage a Palworld dedicated server via the REST API and screen sessions.
 
 ## Setup
 
@@ -13,14 +13,25 @@ A lightweight Discord bot to start, stop, and check the status of a Palworld ded
 ## Requirements
 
 - Node.js 18+
-- A running PalServer with RCON enabled
-- Linux host with `screen` installed (for the `/start` command)
+- A running PalServer with the REST API enabled
+- Linux host with `screen` and `box64` installed (for the `/start` command)
 
 ## Commands
 
-- `/start` — starts the PalServer inside a screen session
-- `/stop` — sends a graceful RCON shutdown
-- `/status` — checks if the server is running
+| Command | Description |
+|---|---|
+| `/start` | Starts the PalServer inside a screen session |
+| `/stop` | Graceful shutdown with a 10-second warning |
+| `/forcestop` | Force stops the server immediately |
+| `/info` | Shows server name, version, and description |
+| `/players` | Lists online players with levels |
+| `/metrics` | Shows FPS, frame time, player count, and uptime |
+| `/settings` | Displays all server settings |
+| `/save` | Saves the world |
+| `/announce` | Sends an announcement to all players |
+| `/kick` | Kicks a player by Steam ID |
+| `/ban` | Bans a player by Steam ID |
+| `/unban` | Unbans a player by Steam ID |
 
 ## License
 
