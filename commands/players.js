@@ -22,7 +22,7 @@ module.exports = {
             value: [
               `Steam: \`${p.userId || 'N/A'}\``,
               `Ping: **${p.ping ?? '?'}ms**`,
-              `Pos: \`${Math.round(p.location_x)}, ${Math.round(p.location_y)}\``
+              `Pos: \`${p.location_x?.toFixed(1) ?? '?'}, ${p.location_y?.toFixed(1) ?? '?'}\``
             ].join('\n'),
             inline: true
           });
