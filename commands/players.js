@@ -10,13 +10,23 @@ module.exports = {
       const players = res.data.players || [];
       const embed = new EmbedBuilder()
         .setColor(0x5865F2)
-        .setTitle(`👥 Online Players (${players.length})`);
+        .setTitle(`👥 Online Players (${players.length})`)
+        .setTimestamp();
 
       if (players.length === 0) {
         embed.setDescription('No players online.');
       } else {
-        const list = players.map(p => `**${p.name}** — Lv.${p.level}`).join('\n');
-        embed.setDescription(list);
+        for (const p of players) {
+          embed.addFields({
+            name: `${p.name} — Lv.${p.level}`,
+            value: [
+              `Steam: \`${p.userId || 'N/A'}\``,
+              `Ping: **${p.ping ?? '?'}ms**`,
+              `Pos: \`${Math.round(p.location_x)}, ${Math.round(p.location_y)}\``
+            ].join('\n'),
+            inline: true
+          });
+        }
       }
 
       return interaction.editReply({ embeds: [embed] });

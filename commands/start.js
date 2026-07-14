@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { exec } = require('child_process');
+const axios = require('axios');
+const { baseURL, axiosConfig } = require('../utils/restApi');
 
 module.exports = {
   data: new SlashCommandBuilder().setName('start').setDescription('Start the PalServer'),
@@ -16,12 +18,51 @@ module.exports = {
     );
 
     const embed = new EmbedBuilder()
-      .setColor(0x57F287)
-      .setTitle('🚀 Starting PalServer')
+      .setColor(0xFEE75C)
+      .setTitle('🔄 Starting PalServer...')
+      .setDescription('Waiting for the server to come online...')
       .addFields(
         { name: 'Screen', value: screenName, inline: true },
         { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` }
       );
-    return interaction.editReply({ embeds: [embed] });
+
+    await interaction.editReply({ embeds: [embed] });
+
+    // Poll the API until the server responds
+    let online = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const res = await axios.get(`${baseURL}/info`, axiosConfig);
+        const { servername, version } = res.data;
+        const uptime = Math.floor(i * 3);
+        embed
+          .setColor(0x57F287)
+          .setTitle('✅ PalServer is Running')
+          .setDescription(null)
+          .setFields(
+            { name: 'Server', value: servername, inline: true },
+            { name: 'Version', value: version, inline: true },
+            { name: 'Screen', value: screenName, inline: true },
+            { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` }
+          );
+        await interaction.editReply({ embeds: [embed] });
+        online = true;
+        break;
+      } catch {}
+    }
+
+    if (!online) {
+      embed
+        .setColor(0xE67E22)
+        .setTitle('⚠️ Server Start Pending')
+        .setDescription('Server process was launched but is not responding yet. It may still be booting — check `/info` in a moment.')
+        .setFields(
+          { name: 'Screen', value: screenName, inline: true },
+          { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` },
+          { name: 'Note', value: 'Large servers can take 30–60 seconds to start.' }
+        );
+      await interaction.editReply({ embeds: [embed] });
+    }
   },
 };
