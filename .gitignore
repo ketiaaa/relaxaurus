@@ -1,7 +1,6 @@
 node_modules/
+keys/
 .env
 *.log
-keys/
-.gitignore
 .claude
 CLAUDE.md
