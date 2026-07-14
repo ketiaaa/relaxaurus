@@ -6,11 +6,17 @@ require('dotenv').config();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 
+const disabled = (process.env.DISABLED_COMMANDS || '').split(',').map(s => s.trim()).filter(Boolean);
+
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
+  if (disabled.includes(command.data.name)) {
+    console.log(`Skipping disabled command: ${command.data.name}`);
+    continue;
+  }
   client.commands.set(command.data.name, command);
 }
 
