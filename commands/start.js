@@ -22,8 +22,7 @@ module.exports = {
       .setTitle('🔄 Starting PalServer...')
       .setDescription('Waiting for the server to come online...')
       .addFields(
-        { name: 'Screen', value: screenName, inline: true },
-        { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` }
+        { name: 'Screen', value: screenName, inline: true }
       );
 
     await interaction.editReply({ embeds: [embed] });
@@ -43,8 +42,7 @@ module.exports = {
           .setFields(
             { name: 'Server', value: servername, inline: true },
             { name: 'Version', value: version, inline: true },
-            { name: 'Screen', value: screenName, inline: true },
-            { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` }
+            { name: 'Screen', value: screenName, inline: true }
           );
         await interaction.editReply({ embeds: [embed] });
         online = true;
@@ -59,7 +57,6 @@ module.exports = {
         .setDescription('Server process was launched but is not responding yet. It may still be booting — check `/info` in a moment.')
         .setFields(
           { name: 'Screen', value: screenName, inline: true },
-          { name: 'Command', value: `\`\`\`${startCmd}\`\`\`` },
           { name: 'Note', value: 'Large servers can take 30–60 seconds to start.' }
         );
       await interaction.editReply({ embeds: [embed] });
