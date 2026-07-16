@@ -16,26 +16,26 @@ function formatUptime(seconds) {
 function getHostMetrics() {
   // Single shell script that gathers CPU, RAM, and GPU utilization in one pass
   const script = `
-    CPU_IDLE=$(LC_ALL=C top -bn1 | grep -E '^%?Cpu' | awk '{print $8}' | cut -d'%' -f1)
-    if [ -n "$CPU_IDLE" ]; then
-      CPU_USED=$(awk "BEGIN {printf \"%.1f\", 100 - $CPU_IDLE}")
+    CPU_IDLE=$(LC_ALL=C top -bn1 | grep -E '^%?Cpu' | awk '{print \$8}' | cut -d'%' -f1)
+    if [ -n "\$CPU_IDLE" ]; then
+      CPU_USED=\$(awk "BEGIN {printf \\"%.1f\\", 100 - \$CPU_IDLE}")
     else
       CPU_USED="N/A"
     fi
 
-    RAM=$(LC_ALL=C free -m | awk '/Mem:/ {printf "%d/%d MB (%.1f%%)", $3, $2, ($3/$2)*100}')
+    RAM=\$(LC_ALL=C free -m | awk '/Mem:/ {printf "%d/%d MB (%.1f%%)", \$3, \$2, (\$3/\$2)*100}')
 
-    GPU=$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
-    if [ -n "$GPU" ]; then
-      GPU_UTIL=$(echo "$GPU" | awk -F',' '{print $1}')
-      GPU_MEM_USED=$(echo "$GPU" | awk -F',' '{print $2}')
-      GPU_MEM_TOTAL=$(echo "$GPU" | awk -F',' '{print $3}')
-      GPU_STR="${GPU_UTIL}% GPU, ${GPU_MEM_USED}/${GPU_MEM_TOTAL} MiB VRAM"
+    GPU=\$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
+    if [ -n "\$GPU" ]; then
+      GPU_UTIL=\$(echo "\$GPU" | awk -F',' '{print \$1}')
+      GPU_MEM_USED=\$(echo "\$GPU" | awk -F',' '{print \$2}')
+      GPU_MEM_TOTAL=\$(echo "\$GPU" | awk -F',' '{print \$3}')
+      GPU_STR="\${GPU_UTIL}% GPU, \${GPU_MEM_USED}/\${GPU_MEM_TOTAL} MiB VRAM"
     else
       GPU_STR="N/A"
     fi
 
-    echo "${CPU_USED}|${RAM}|${GPU_STR}"
+    echo "\${CPU_USED}|\${RAM}|\${GPU_STR}"
   `;
 
   return execPromise(script, { timeout: 8000 })
