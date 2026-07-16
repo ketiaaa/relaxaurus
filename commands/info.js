@@ -25,17 +25,7 @@ function getHostMetrics() {
 
     RAM=\$(LC_ALL=C free -m | awk '/Mem:/ {printf "%d/%d MB (%.1f%%)", \$3, \$2, (\$3/\$2)*100}')
 
-    GPU=\$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
-    if [ -n "\$GPU" ]; then
-      GPU_UTIL=\$(echo "\$GPU" | awk -F',' '{print \$1}')
-      GPU_MEM_USED=\$(echo "\$GPU" | awk -F',' '{print \$2}')
-      GPU_MEM_TOTAL=\$(echo "\$GPU" | awk -F',' '{print \$3}')
-      GPU_STR="\${GPU_UTIL}% GPU, \${GPU_MEM_USED}/\${GPU_MEM_TOTAL} MiB VRAM"
-    else
-      GPU_STR="N/A"
-    fi
-
-    echo "\${CPU_USED}|\${RAM}|\${GPU_STR}"
+    echo "\${CPU_USED}|\${RAM}"
   `;
 
   return execPromise(script, { timeout: 8000 })
@@ -44,12 +34,11 @@ function getHostMetrics() {
       return {
         cpu: parts[0] ? `${parts[0]}%` : 'N/A',
         ram: parts[1] || 'N/A',
-        gpu: parts[2] || 'N/A',
       };
     })
     .catch((err) => {
       console.error('Host metrics collection failed:', err.message);
-      return { cpu: 'N/A', ram: 'N/A', gpu: 'N/A' };
+      return { cpu: 'N/A', ram: 'N/A' };
     });
 }
 
@@ -75,9 +64,7 @@ module.exports = {
           { name: 'Uptime', value: formatUptime(uptime), inline: true },
           { name: 'FPS', value: String(serverfps), inline: true },
           { name: 'CPU', value: hostMetrics.cpu, inline: true },
-          { name: 'RAM', value: hostMetrics.ram, inline: true },
-          { name: 'GPU', value: hostMetrics.gpu, inline: true },
-          { name: 'World GUID', value: `\`${worldguid}\``, inline: true }
+          { name: 'RAM', value: hostMetrics.ram, inline: true }
         )
         .setFooter({ text: `World GUID: ${worldguid}` })
         .setTimestamp();
