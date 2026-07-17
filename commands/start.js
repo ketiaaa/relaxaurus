@@ -7,7 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder().setName('start').setDescription('Start the PalServer'),
   async execute(interaction) {
     const screenName = process.env.PALSERVER_SCREEN_NAME || 'palserver';
-    const startCmd = `cd ~/Steam/steamapps/common/PalServer && BOX64_DYNAREC_BIGBLOCK=0 BOX64_MALLOC_HACK=1 box64 ./PalServer.sh -useperfthreads -UseMultithreadForDS`;
+    const startCmd = `cd ~/Steam/steamapps/common/PalServer && BOX64_MALLOC_HACK=1 box64 ./PalServer.sh -useperfthreads -UseMultithreadForDS`;
 
     exec(
       `screen -dmS ${screenName} bash -c "${startCmd}"`,
