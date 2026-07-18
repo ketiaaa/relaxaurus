@@ -1,12 +1,15 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const axios = require('axios');
-const { baseURL, axiosConfig } = require('../utils/restApi');
+const { exec } = require('child_process');
+const util = require('util');
+
+const execPromise = util.promisify(exec);
+const CONTAINER = 'palworld-server';
 
 module.exports = {
   data: new SlashCommandBuilder().setName('forcestop').setDescription('Force stop the PalServer immediately'),
   async execute(interaction) {
     try {
-      await axios.post(`${baseURL}/stop`, {}, axiosConfig);
+      await execPromise(`docker stop -t 0 ${CONTAINER}`);
       const embed = new EmbedBuilder()
         .setColor(0xED4245)
         .setTitle('⛔ Server Force Stopped');
