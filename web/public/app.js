@@ -25,17 +25,20 @@ if (params.get('error') === 'auth_failed') {
 if (params.has('token')) {
   authToken = params.get('token');
   window.history.replaceState({}, document.title, '/');
+  // Decode JWT payload for immediate login (verified on every API call)
+  try {
+    const payload = JSON.parse(atob(authToken.split('.')[1]));
+    user = { username: payload.username, role: payload.role, avatar: payload.avatar };
+    showDashboard();
+  } catch {}
 }
 
 async function checkSession() {
-  if (!authToken) {
-    // No token at all — show login
-    return;
-  }
+  if (!authToken) return;
   try {
     user = await api('/api/auth/me');
     showDashboard();
-  } catch { /* invalid token, show login */ }
+  } catch { logout(); }
 }
 
 function logout() {
