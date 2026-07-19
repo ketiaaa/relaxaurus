@@ -245,7 +245,7 @@ async function quickAction(action) {
 // ── Console ──────────────────────────────────────────────────────────
 function renderConsole() {
   return `<div class="card" style="padding:12px"><div class="terminal" id="console-output"></div>
-    <div class="terminal-input-row"><span class="prompt">></span><input type="text" id="console-input" placeholder="Type command…" onkeydown="handleConsoleKey(event)"></div></div>`;
+    <div class="terminal-input-row"><span class="prompt">></span><input type="text" id="console-input" placeholder="Type command…" onkeydown="handleConsoleKey(event)" autofocus></div></div>`;
 }
 function initConsole() {
   const out = document.getElementById('console-output');
