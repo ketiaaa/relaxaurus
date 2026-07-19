@@ -256,11 +256,17 @@ async function sendCommand() {
   inp.value = '';
   out.scrollTop = out.scrollHeight;
   try {
-    const r = await fetch('/api/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }, body: JSON.stringify({ cmd }) });
-    const data = await r.json();
-    out.innerHTML += `<div class="line rc">${esc(data.output || data.error || 'No response')}</div>`;
+    const r = await fetch('/api/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }, body: JSON.stringify({ cmd }), redirect: 'manual' });
+    if (r.type === 'opaqueredirect') { out.innerHTML += `<div class="line error">Session expired — please refresh</div>`; return; }
+    const text = await r.text();
+    try {
+      const data = JSON.parse(text);
+      out.innerHTML += `<div class="line rc">${esc(data.output || data.error || 'No response')}</div>`;
+    } catch {
+      out.innerHTML += `<div class="line rc">${esc(text.slice(0, 500))}</div>`;
+    }
   } catch(e) {
-    out.innerHTML += `<div class="line error">Connection failed</div>`;
+    out.innerHTML += `<div class="line error">${esc(e.message)}</div>`;
   }
   out.scrollTop = out.scrollHeight;
 }
@@ -271,12 +277,14 @@ async function initConsole() {
     const r = await fetch('/api/logs', { headers: { 'Authorization': 'Bearer '+token } });
     if (r.ok) {
       const data = await r.json();
-      out.innerHTML = (data.lines||['No logs yet']).map(l => `<div class="line info">${esc(l)}</div>`).join('');
-    } else {
-      out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
+      if (data.lines?.length) {
+        out.innerHTML = data.lines.map(l => `<div class="line info">${esc(l)}</div>`).join('');
+      }
     }
-  } catch {
-    out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
+  } catch {}
+  if (!out.textContent?.trim() || out.textContent === 'Loading logs...') {
+    // Only show mock data if we couldn't get real logs
+    out.innerHTML = '<div class="line info">[Console] Connected. Type a command below.</div>';
   }
   out.scrollTop = out.scrollHeight;
   const inp = document.getElementById('console-input');
