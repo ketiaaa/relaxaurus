@@ -1,10 +1,13 @@
 // ── State ────────────────────────────────────────────────────────────
 let user = null;
+let authToken = null;
 let refreshTimer = null;
 
 // ── API helper ───────────────────────────────────────────────────────
 async function api(url, opts = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } });
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  const res = await fetch(url, { ...opts, headers });
   if (res.status === 401) { logout(); throw new Error('Session expired'); }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
@@ -12,21 +15,31 @@ async function api(url, opts = {}) {
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────
-// Check for OAuth error from redirect
+// Check for OAuth error or token from redirect
 const params = new URLSearchParams(window.location.search);
 if (params.get('error') === 'auth_failed') {
   document.getElementById('login-error').textContent = 'Login failed — you must be a member of the Discord server.';
 }
 
+// Extract token from URL (set by OAuth callback) and clean the URL
+if (params.has('token')) {
+  authToken = params.get('token');
+  window.history.replaceState({}, document.title, '/');
+}
+
 async function checkSession() {
+  if (!authToken) {
+    // No token at all — show login
+    return;
+  }
   try {
     user = await api('/api/auth/me');
     showDashboard();
-  } catch { /* not logged in */ }
+  } catch { /* invalid token, show login */ }
 }
 
 function logout() {
-  api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  authToken = null;
   user = null;
   clearInterval(refreshTimer);
   document.getElementById('login-page').classList.add('active');

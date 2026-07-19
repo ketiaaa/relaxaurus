@@ -141,9 +141,9 @@ app.get('/api/auth/callback', async (req, res) => {
       role,
     };
 
+    const jwtToken = jwt.sign(sessionUser, JWT_SECRET, { expiresIn: '12h' });
     auditLog(user.username, 'LOGIN', `role=${role}`);
-    setUserCookie(res, sessionUser);
-    res.redirect('/');
+    res.redirect(`/?token=${jwtToken}`);
   } catch (e) {
     console.error('OAuth error:', e.message);
     res.redirect('/?error=auth_failed');
@@ -156,7 +156,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  const token = req.cookies?.token;
+  const token = getToken(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   try {
     return res.json(jwt.verify(token, JWT_SECRET));
@@ -182,8 +182,12 @@ function clearUserCookie(res) {
 }
 
 // ── Auth middleware ──────────────────────────────────────────────────
+function getToken(req) {
+  return req.cookies?.token || (req.headers.authorization || '').replace('Bearer ', '');
+}
+
 function authenticate(req, res, next) {
-  const token = req.cookies?.token;
+  const token = getToken(req);
   if (!token) return res.status(401).json({ error: 'Authentication required' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
