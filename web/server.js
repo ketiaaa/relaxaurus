@@ -1,5 +1,5 @@
 const express = require('express');
-const session = require('express-session');
+const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -17,7 +17,7 @@ const PALWORLD_HOST = process.env.PALWORLD_HOST || '127.0.0.1';
 const REST_PORT = process.env.PALWORLD_REST_PORT || 8212;
 const ADMIN_PASSWORD = process.env.PALWORLD_ADMIN_PASSWORD || 'admin';
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
+const JWT_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_GUILD_ID = process.env.GUILD_ID; // reuse from bot .env
@@ -55,17 +55,6 @@ app.use(helmet({
 }));
 app.use(cookieParser());
 app.use(express.json());
-app.use(session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    secure: false, // cloudflared handles TLS, traffic to express is localhost
-    sameSite: 'lax',
-    maxAge: 12 * 60 * 60 * 1000, // 12h
-  },
-}));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(morgan('short'));
 
@@ -145,7 +134,7 @@ app.get('/api/auth/callback', async (req, res) => {
     const member = await getGuildMember(user.id, tokenR.data.access_token);
     const role = getUserRole(member);
 
-    req.session.user = {
+    const sessionUser = {
       id: user.id,
       username: user.username,
       avatar: user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null,
@@ -153,10 +142,8 @@ app.get('/api/auth/callback', async (req, res) => {
     };
 
     auditLog(user.username, 'LOGIN', `role=${role}`);
-    req.session.save((err) => {
-      if (err) console.error('Session save error:', err);
-      res.redirect('/');
-    });
+    setUserCookie(res, sessionUser);
+    res.redirect('/');
   } catch (e) {
     console.error('OAuth error:', e.message);
     res.redirect('/?error=auth_failed');
@@ -164,21 +151,46 @@ app.get('/api/auth/callback', async (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.clearCookie('connect.sid');
+  clearUserCookie(res);
   return res.json({ ok: true });
 });
 
 app.get('/api/auth/me', (req, res) => {
-  if (!req.session.user) return res.status(401).json({ error: 'Not authenticated' });
-  return res.json(req.session.user);
+  const token = req.cookies?.token;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  try {
+    return res.json(jwt.verify(token, JWT_SECRET));
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 });
+
+// ── JWT cookie helpers ──────────────────────────────────────────────
+function setUserCookie(res, user) {
+  const token = jwt.sign(user, JWT_SECRET, { expiresIn: '12h' });
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    maxAge: 12 * 60 * 60 * 1000,
+    path: '/',
+  });
+}
+
+function clearUserCookie(res) {
+  res.clearCookie('token', { path: '/' });
+}
 
 // ── Auth middleware ──────────────────────────────────────────────────
 function authenticate(req, res, next) {
-  if (!req.session.user) return res.status(401).json({ error: 'Authentication required' });
-  req.user = req.session.user;
-  next();
+  const token = req.cookies?.token;
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
 }
 
 function requireAdmin(req, res, next) {
