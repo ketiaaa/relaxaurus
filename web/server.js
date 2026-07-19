@@ -82,22 +82,28 @@ async function getDiscordUser(accessToken) {
   return r.data;
 }
 
-async function getGuildMember(userId) {
+async function getGuildMember(userId, accessToken) {
   if (!DISCORD_GUILD_ID) return null;
   try {
-    const r = await axios.get(
-      `https://discord.com/api/users/@me/guilds`,
-      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
-    );
-    const botGuilds = r.data.map(g => g.id);
-    if (!botGuilds.includes(DISCORD_GUILD_ID)) return null;
+    // Check if user is in our guild
+    const guildsR = await axios.get('https://discord.com/api/users/@me/guilds', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const inGuild = guildsR.data.some(g => g.id === DISCORD_GUILD_ID);
+    if (!inGuild) return null;
 
-    const memberR = await axios.get(
-      `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${userId}`,
-      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
-    );
-    return memberR.data;
-  } catch {
+    // Get member with roles via bot token
+    if (process.env.DISCORD_TOKEN) {
+      const memberR = await axios.get(
+        `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${userId}`,
+        { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
+      );
+      return memberR.data;
+    }
+    // Fallback: basic guild membership without role info
+    return { user: { id: userId }, guild_id: DISCORD_GUILD_ID, roles: [] };
+  } catch (e) {
+    console.error('Guild check error:', e.message);
     return null;
   }
 }
@@ -136,7 +142,7 @@ app.get('/api/auth/callback', async (req, res) => {
     );
 
     const user = await getDiscordUser(tokenR.data.access_token);
-    const member = await getGuildMember(user.id);
+    const member = await getGuildMember(user.id, tokenR.data.access_token);
     const role = getUserRole(member);
 
     req.session.user = {
@@ -147,7 +153,10 @@ app.get('/api/auth/callback', async (req, res) => {
     };
 
     auditLog(user.username, 'LOGIN', `role=${role}`);
-    res.redirect('/');
+    req.session.save((err) => {
+      if (err) console.error('Session save error:', err);
+      res.redirect('/');
+    });
   } catch (e) {
     console.error('OAuth error:', e.message);
     res.redirect('/?error=auth_failed');
