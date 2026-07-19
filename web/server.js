@@ -113,7 +113,7 @@ app.get('/', (req, res) => {
         const uptime = m?.uptime != null ? (() => { const h = Math.floor(m.uptime/3600); const min = Math.floor((m.uptime%3600)/60); return `${h}h ${min}m`; })() : '—';
         const playerList = p?.players;
         const playerHTML = playerList?.length
-          ? playerList.map(x => `<div class="player"><div><div class="n">${x.name} — Lv.${x.level}</div><div class="m">${x.userId||'N/A'} | ${x.ping||'?'}ms</div></div></div>`).join('')
+          ? playerList.map(x => `<div class="player"><div><div class="n">${x.name} — Lv.${x.level}</div><div class="m">${x.userId||'N/A'} | ${(x.ping!=null?x.ping.toFixed(2):'?')}ms</div></div></div>`).join('')
           : '<div class="empty">No players online.</div>';
         return { serverName, players, fps, uptime, playerHTML };
       } catch {
@@ -137,7 +137,7 @@ async function load() {
     else if (!i) { document.getElementById('players').innerHTML = '<div class=\"empty\">Server offline</div>'; }
     const pl = p?.players;
     const d = document.getElementById('players');
-    if (pl?.length) { d.innerHTML = pl.map(x=>'<div class=\"player\"><div><div class=\"n\">'+esc(x.name)+' — Lv.'+x.level+'</div><div class=\"m\">'+esc(x.userId||'N/A')+' | '+(x.ping||'?')+'ms</div></div></div>').join(''); }
+    if (pl?.length) { d.innerHTML = pl.map(x=>'<div class=\"player\"><div><div class=\"n\">'+esc(x.name)+' — Lv.'+x.level+'</div><div class=\"m\">'+esc(x.userId||'N/A')+' | '+((x.ping!=null?x.ping.toFixed(2):'?'))+'ms</div></div></div>').join(''); }
     else if (pl && pl.length===0) { d.innerHTML = '<div class=\"empty\">No players online.</div>'; }
   } catch(e) { document.getElementById('players').innerHTML = '<div class=\"empty\">Error: '+e.message+'</div>'; }
 }
