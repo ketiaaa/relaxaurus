@@ -36,7 +36,8 @@ function audit(user, action, detail = '') {
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "https://cdn.discordapp.com"], connectSrc: ["'self'"] } } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Static files (but NOT index.html — root route handles that)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.use(morgan('short'));
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
