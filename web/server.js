@@ -32,7 +32,7 @@ function audit(user, action, detail = '') {
 }
 
 // ── Middleware ───────────────────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "https://cdn.discordapp.com"], connectSrc: ["'self'"] } } }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "https://cdn.discordapp.com"], connectSrc: ["'self'"] } } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(morgan('short'));
@@ -134,11 +134,12 @@ async function load() {
     ]);
     if (i) { document.getElementById('s-name').textContent = i.servername||'Offline'; }
     if (m) { document.getElementById('s-players').textContent = (m.currentplayernum||0)+'/'+(m.maxplayernum||0); document.getElementById('s-fps').textContent = m.serverfps||'—'; document.getElementById('s-uptime').textContent = fmt(m.uptime||0); }
+    else if (!i) { document.getElementById('players').innerHTML = '<div class=\"empty\">Server offline</div>'; }
     const pl = p?.players;
     const d = document.getElementById('players');
-    if (pl?.length) { d.innerHTML = pl.map(x=>'<div class="player"><div><div class="n">'+esc(x.name)+' — Lv.'+x.level+'</div><div class="m">'+esc(x.userId||'N/A')+' | '+(x.ping||'?')+'ms</div></div></div>').join(''); }
-    else { d.innerHTML = '<div class="empty">No players online.</div>'; }
-  } catch(e) {}
+    if (pl?.length) { d.innerHTML = pl.map(x=>'<div class=\"player\"><div><div class=\"n\">'+esc(x.name)+' — Lv.'+x.level+'</div><div class=\"m\">'+esc(x.userId||'N/A')+' | '+(x.ping||'?')+'ms</div></div></div>').join(''); }
+    else if (pl && pl.length===0) { d.innerHTML = '<div class=\"empty\">No players online.</div>'; }
+  } catch(e) { document.getElementById('players').innerHTML = '<div class=\"empty\">Error: '+e.message+'</div>'; }
 }
 function fmt(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h+'h '+m+'m'; }
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
