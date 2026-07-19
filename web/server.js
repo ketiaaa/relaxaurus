@@ -331,6 +331,19 @@ app.get('/api/audit', authenticate, requireAdmin, (req, res) => {
   }
 });
 
+// ── Root with injected session ───────────────────────────────────────
+app.get('/', (req, res) => {
+  const token = getToken(req) || req.query.token;
+  let userData = null;
+  if (token) {
+    try { userData = jwt.verify(token, JWT_SECRET); } catch {}
+  }
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  const injected = html.replace('</head>',
+    `<script>window.__USER__ = ${JSON.stringify(userData)};</script></head>`);
+  res.send(injected);
+});
+
 // ── SPA fallback ─────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {

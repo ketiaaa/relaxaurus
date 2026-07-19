@@ -21,17 +21,26 @@ if (params.get('error') === 'auth_failed') {
   document.getElementById('login-error').textContent = 'Login failed — you must be a member of the Discord server.';
 }
 
-// Extract token from URL (set by OAuth callback) and clean the URL
-if (params.has('token')) {
-  authToken = params.get('token');
-  window.history.replaceState({}, document.title, '/');
-  // Decode JWT payload for immediate login (verified on every API call)
-  try {
-    const payload = JSON.parse(atob(authToken.split('.')[1]));
-    user = { username: payload.username, role: payload.role, avatar: payload.avatar };
-    showDashboard();
-  } catch {}
+// Use server-injected user data if available
+if (window.__USER__) {
+  user = window.__USER__;
+  // Token is in URL — extract and clean it
+  if (params.has('token')) {
+    authToken = params.get('token');
+    window.history.replaceState({}, document.title, '/');
+  }
+  showDashboard();
 }
+
+// Fallback: extract token from URL if not already injected
+if (!user && params.has('token')) {
+  authToken = params.get('token');
+  const payload = JSON.parse(atob(authToken.split('.')[1]));
+  user = { username: payload.username, role: payload.role, avatar: payload.avatar };
+  window.history.replaceState({}, document.title, '/');
+  showDashboard();
+}
+
 
 async function checkSession() {
   if (!authToken) return;
