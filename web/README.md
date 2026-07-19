@@ -4,6 +4,9 @@ Secure web-based dashboard for managing a Palworld dedicated server.
 
 ## Quick Start
 
+1. In your Discord Application → OAuth2 → add redirect: `http://localhost:3000/api/auth/callback`
+2. Enable **Server Members Intent** in Discord Developer Portal → Bot
+3. Then:
 ```bash
 cd web
 npm install
@@ -11,7 +14,11 @@ cp .env.example .env   # edit with your values
 npm start
 ```
 
-Open `http://localhost:3000` — login with the credentials you set in `.env`.
+Open `http://localhost:3000` — sign in with Discord.
+
+## Authentication
+
+Uses **Discord OAuth2** — no separate passwords to manage. Users must be members of your Discord server to access the dashboard. Their role (admin/viewer) is assigned based on their Discord roles.
 
 ## Environment Variables
 
@@ -19,13 +26,14 @@ Open `http://localhost:3000` — login with the credentials you set in `.env`.
 |---|---|---|
 | `PALWORLD_HOST` | 127.0.0.1 | Palworld server IP |
 | `PALWORLD_REST_PORT` | 8212 | REST API port |
-| `PALWORLD_RCON_PORT` | 25575 | RCON port |
 | `PALWORLD_ADMIN_PASSWORD` | — | Server admin password |
-| `JWT_SECRET` | — | Random string for session signing (64 chars) |
-| `DASHBOARD_USER` | admin | Admin login username |
-| `DASHBOARD_PASS` | — | Admin login password |
-| `VIEWER_USER` | viewer | Viewer login username (optional) |
-| `VIEWER_PASS` | — | Viewer login password (optional) |
+| `DISCORD_CLIENT_ID` | — | Discord application ID |
+| `DISCORD_CLIENT_SECRET` | — | Discord OAuth2 client secret |
+| `DISCORD_TOKEN` | — | Discord bot token |
+| `GUILD_ID` | — | Discord server ID (guild check) |
+| `SESSION_SECRET` | — | Random string for session signing |
+| `DASHBOARD_ADMIN_ROLE_ID` | — | Discord role ID for admin access (optional) |
+| `BASE_URL` | http://localhost:3000 | Dashboard public URL (no trailing slash) |
 | `PORT` | 3000 | Web server port |
 
 ## Security Checklist Before Exposing
@@ -73,8 +81,11 @@ sudo systemctl enable --now relaxaurus-web
 
 ## Roles
 
-- **admin** — all actions (save, shutdown, kick, ban, announce, view audit log)
-- **viewer** — read-only (server info, player list, metrics)
+Mapped from Discord guild membership:
+- **admin** — users with the configured `DASHBOARD_ADMIN_ROLE_ID` Discord role (or the guild owner)
+- **viewer** — any other member of your Discord server
+
+If `DASHBOARD_ADMIN_ROLE_ID` is not set, the guild owner is the only admin — everyone else gets viewer access.
 
 ## Audit Log
 

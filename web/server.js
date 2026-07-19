@@ -1,6 +1,5 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -8,7 +7,6 @@ const axios = require('axios');
 const morgan = require('morgan');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
@@ -16,27 +14,18 @@ const app = express();
 // ── Config ──────────────────────────────────────────────────────────
 const PALWORLD_HOST = process.env.PALWORLD_HOST || '127.0.0.1';
 const REST_PORT = process.env.PALWORLD_REST_PORT || 8212;
-const RCON_PORT = process.env.PALWORLD_RCON_PORT || 25575;
 const ADMIN_PASSWORD = process.env.PALWORLD_ADMIN_PASSWORD || 'admin';
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const PORT = process.env.PORT || 3000;
+const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_GUILD_ID = process.env.GUILD_ID; // reuse from bot .env
+const ADMIN_ROLE_ID = process.env.DASHBOARD_ADMIN_ROLE_ID || ''; // Discord role ID for admin
+const BASE_CALLBACK = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 const BASE_URL = `http://${PALWORLD_HOST}:${REST_PORT}/v1/api`;
 const AUTH_HEADER = `Basic ${Buffer.from(`admin:${ADMIN_PASSWORD}`).toString('base64')}`;
 const axiosConfig = { headers: { Authorization: AUTH_HEADER }, timeout: 10000 };
-
-// ── User store (env-based, no DB needed) ────────────────────────────
-const USERS = {};
-const salt = bcrypt.genSaltSync(10);
-const adminUser = process.env.DASHBOARD_USER || 'admin';
-const adminPass = process.env.DASHBOARD_PASS || 'admin';
-const viewerUser = process.env.VIEWER_USER || 'viewer';
-const viewerPass = process.env.VIEWER_PASS || 'viewer';
-
-USERS[adminUser] = { password: bcrypt.hashSync(adminPass, salt), role: 'admin' };
-if (viewerUser) {
-  USERS[viewerUser] = { password: bcrypt.hashSync(viewerPass, salt), role: 'viewer' };
-}
 
 // ── Audit log ────────────────────────────────────────────────────────
 const AUDIT_LOG = path.join(__dirname, 'audit.log');
@@ -58,34 +47,128 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'", "https://discord.com"],
+      imgSrc: ["'self'", "https://cdn.discordapp.com"],
     },
   },
 }));
 app.use(cookieParser());
 app.use(express.json());
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 12 * 60 * 60 * 1000, // 12h
+  },
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(morgan('short'));
 
 // Rate limiting
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Too many login attempts' } });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Rate limit exceeded' } });
 const actionLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Action rate limit exceeded' } });
-
 app.use('/api', apiLimiter);
-app.use('/api/auth/login', loginLimiter);
+
+// ── Discord OAuth2 ──────────────────────────────────────────────────
+async function getDiscordUser(accessToken) {
+  const r = await axios.get('https://discord.com/api/users/@me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return r.data;
+}
+
+async function getGuildMember(userId) {
+  if (!DISCORD_GUILD_ID) return null;
+  try {
+    const r = await axios.get(
+      `https://discord.com/api/users/@me/guilds`,
+      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
+    );
+    const botGuilds = r.data.map(g => g.id);
+    if (!botGuilds.includes(DISCORD_GUILD_ID)) return null;
+
+    const memberR = await axios.get(
+      `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${userId}`,
+      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
+    );
+    return memberR.data;
+  } catch {
+    return null;
+  }
+}
+
+function getUserRole(member) {
+  if (!member) return 'viewer';
+  if (ADMIN_ROLE_ID && member.roles?.includes(ADMIN_ROLE_ID)) return 'admin';
+  // Guild owner is always admin
+  if (member.user?.id === member.guild_id) return 'admin';
+  // If no admin role configured, first login = viewer
+  return 'viewer';
+}
+
+app.get('/api/auth/login', (req, res) => {
+  const redirect = encodeURIComponent(`${BASE_CALLBACK}/api/auth/callback`);
+  res.redirect(
+    `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}` +
+    `&redirect_uri=${redirect}&response_type=code&scope=identify%20guilds`
+  );
+});
+
+app.get('/api/auth/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error || !code) return res.redirect('/?error=discord_denied');
+
+  try {
+    // Exchange code for token
+    const tokenR = await axios.post('https://discord.com/api/oauth2/token',
+      new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${BASE_CALLBACK}/api/auth/callback`,
+      }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const user = await getDiscordUser(tokenR.data.access_token);
+    const member = await getGuildMember(user.id);
+    const role = getUserRole(member);
+
+    req.session.user = {
+      id: user.id,
+      username: user.username,
+      avatar: user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null,
+      role,
+    };
+
+    auditLog(user.username, 'LOGIN', `role=${role}`);
+    res.redirect('/');
+  } catch (e) {
+    console.error('OAuth error:', e.message);
+    res.redirect('/?error=auth_failed');
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy();
+  res.clearCookie('connect.sid');
+  return res.json({ ok: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.user) return res.status(401).json({ error: 'Not authenticated' });
+  return res.json(req.session.user);
+});
 
 // ── Auth middleware ──────────────────────────────────────────────────
 function authenticate(req, res, next) {
-  const token = req.cookies?.token || (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
-
-  try {
-    const user = jwt.verify(token, JWT_SECRET);
-    req.user = user;
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  if (!req.session.user) return res.status(401).json({ error: 'Authentication required' });
+  req.user = req.session.user;
+  next();
 }
 
 function requireAdmin(req, res, next) {
@@ -94,36 +177,6 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
-
-// ── Auth routes ──────────────────────────────────────────────────────
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-
-  const user = USERS[username];
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  const token = jwt.sign({ username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-  auditLog(username, 'LOGIN');
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 12 * 60 * 60 * 1000,
-  });
-  return res.json({ username, role: user.role });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('token');
-  return res.json({ ok: true });
-});
-
-app.get('/api/auth/me', authenticate, (req, res) => {
-  return res.json({ username: req.user.username, role: req.user.role });
-});
 
 // ── REST API proxy (read-only, any authenticated user) ───────────────
 app.get('/api/server/info', authenticate, async (req, res) => {

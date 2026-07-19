@@ -49,17 +49,19 @@ body {
   color: var(--text);
   font-size: 1rem;
 }
-.login-card button {
+.discord-btn {
+  display: block;
   width: 100%;
-  padding: 10px;
-  background: var(--accent);
+  padding: 12px;
+  background: #5865f2;
   color: #fff;
-  border: none;
+  text-decoration: none;
   border-radius: var(--radius);
   font-size: 1rem;
-  cursor: pointer;
+  text-align: center;
+  font-weight: 500;
 }
-.login-card button:hover { opacity: 0.9; }
+.discord-btn:hover { opacity: 0.9; }
 
 /* Card */
 .card {

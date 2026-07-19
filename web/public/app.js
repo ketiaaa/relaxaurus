@@ -12,19 +12,11 @@ async function api(url, opts = {}) {
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────
-document.getElementById('login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const username = document.getElementById('username').value;
-  const password = document.getElementById('password').value;
-  const errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  try {
-    user = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-    showDashboard();
-  } catch (err) {
-    errEl.textContent = err.message;
-  }
-});
+// Check for OAuth error from redirect
+const params = new URLSearchParams(window.location.search);
+if (params.get('error') === 'auth_failed') {
+  document.getElementById('login-error').textContent = 'Login failed — you must be a member of the Discord server.';
+}
 
 async function checkSession() {
   try {
@@ -47,7 +39,9 @@ document.getElementById('logout-btn').addEventListener('click', logout);
 function showDashboard() {
   document.getElementById('login-page').classList.remove('active');
   document.getElementById('dashboard-page').classList.add('active');
-  document.getElementById('current-user').textContent = `👤 ${user.username} (${user.role})`;
+  document.getElementById('current-user').textContent = `${user.username} (${user.role})`;
+  const avatar = user.avatar ? `<img src="${user.avatar}" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:4px">` : '👤';
+  document.getElementById('current-user').innerHTML = `${avatar} ${user.username} (${user.role})`;
 
   if (user.role === 'admin') {
     document.getElementById('admin-section').style.display = '';
