@@ -169,8 +169,8 @@ app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
   console.log(`[RCON] ${req.authUser.username}: ${cmd}`);
   exec(shellCmd, { timeout: 12000 }, (err, stdout, stderr) => {
     let output = (stdout || '').trim();
-    // Strip RCON prompt banner
-    output = output.replace(/^Waiting commands for.*\n?/gm, '').replace(/\n?>$/, '').trim();
+    // Strip RCON prompt banner and null bytes
+    output = output.replace(/^Waiting commands for.*\n?/gm, '').replace(/\n?>$/, '').replace(/\x00/g, '').trim();
     // Strip trailing RCON i/o timeout error that appears in stdout
     output = output.replace(/\ncli: execute:.*i\/o timeout$/, '').trim();
     console.log(`[RCON] Output (${output.length} chars): ${output.slice(0, 200) || '(empty)'}`);
