@@ -35,6 +35,12 @@ function auditLog(username, action, details = '') {
   fs.appendFileSync(AUDIT_LOG, entry);
 }
 
+// ── No-cache for API responses ──────────────────────────────────────
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  next();
+});
+
 // ── Input sanitizer ──────────────────────────────────────────────────
 function sanitize(input) {
   if (typeof input !== 'string') return '';
