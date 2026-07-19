@@ -126,10 +126,13 @@ app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
   const cmd = (req.body.cmd || '').replace(/[;&|`$]/g, '').trim().slice(0, 200);
   if (!cmd) return res.status(400).json({ error: 'Command required' });
   const { exec } = require('child_process');
-  exec(`docker exec palworld-server rcon-cli "${cmd}"`, { timeout: 5000 }, (err, stdout, stderr) => {
-    if (err) return res.status(502).json({ error: err.message, output: stderr || stdout });
-    audit(req.authUser.username, 'RCON', cmd);
-    return res.json({ output: stdout.trim() || 'Command sent' });
+  exec(`echo "${cmd}" | docker exec -i palworld-server rcon-cli`, { timeout: 8000 }, (err, stdout, stderr) => {
+    const output = (stdout || '').trim();
+    if (output || !err) {
+      audit(req.authUser.username, 'RCON', cmd);
+      return res.json({ output: output || 'Command sent' });
+    }
+    return res.status(502).json({ error: err.message, output: stderr || stdout });
   });
 });
 
