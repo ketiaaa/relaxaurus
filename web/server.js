@@ -165,20 +165,22 @@ app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
   const cmd = (req.body.cmd || '').replace(/[;&|`$]/g, '').trim().slice(0, 200);
   if (!cmd) return res.status(400).json({ error: 'Command required' });
   const { exec } = require('child_process');
-  const shellCmd = `echo "${cmd}" | docker exec -i palworld-server rcon-cli`;
+  const shellCmd = `docker exec palworld-server rcon-cli "${cmd}"`;
   console.log(`[RCON] ${req.authUser.username}: ${cmd}`);
-  exec(shellCmd, { timeout: 8000 }, (err, stdout, stderr) => {
-    const output = (stdout || '').trim();
-    if (err) {
-      console.error(`[RCON] Error: ${err.message}`);
-      console.error(`[RCON] Stderr: ${stderr}`);
+  exec(shellCmd, { timeout: 12000 }, (err, stdout, stderr) => {
+    let output = (stdout || '').trim();
+    // Strip RCON prompt banner
+    output = output.replace(/^Waiting commands for.*\n?/gm, '').replace(/\n?>$/, '').trim();
+    // Strip trailing RCON i/o timeout error that appears in stdout
+    output = output.replace(/\ncli: execute:.*i\/o timeout$/, '').trim();
+    console.log(`[RCON] Output (${output.length} chars): ${output.slice(0, 200) || '(empty)'}`);
+    if (err && !output) {
+      console.error(`[RCON] Error (no output): ${err.message}`);
+      return res.status(502).json({ error: err.message });
     }
-    console.log(`[RCON] Output: ${output?.slice(0, 200) || '(empty)'}`);
-    if (output || !err) {
-      audit(req.authUser.username, 'RCON', cmd);
-      return res.json({ output: output || 'Command sent (no output)' });
-    }
-    return res.status(502).json({ error: err.message, output: stderr || stdout || 'RCON command failed' });
+    // RCON always exits with i/o timeout — output is still valid
+    audit(req.authUser.username, 'RCON', cmd);
+    return res.json({ output: output || 'Command sent (no output)' });
   });
 });
 
