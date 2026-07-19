@@ -245,12 +245,13 @@ async function quickAction(action) {
 // ── Console ──────────────────────────────────────────────────────────
 function renderConsole() {
   return `<div class="card" style="padding:12px"><div class="terminal" id="console-output"></div>
-    <form id="console-form" onsubmit="event.preventDefault();sendCommand()" style="display:flex;gap:8px"><span class="prompt" style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button type="submit" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></form></div>`;
+    <form id="console-form" onsubmit="sendCommand(event)" style="display:flex;gap:8px"><span class="prompt" style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button type="submit" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></form></div>`;
 }
-async function sendCommand() {
+async function sendCommand(e) {
+  e.preventDefault();
   const inp = document.getElementById('console-input');
   const cmd = inp.value.trim();
-  if (!cmd) return false;
+  if (!cmd) return;
   const out = document.getElementById('console-output');
   out.innerHTML += `<div class="line cmd">> ${esc(cmd)}</div>`;
   inp.value = '';
@@ -263,7 +264,6 @@ async function sendCommand() {
     out.innerHTML += `<div class="line error">Connection failed</div>`;
   }
   out.scrollTop = out.scrollHeight;
-  return false;
 }
 function initConsole() {
   const out = document.getElementById('console-output');

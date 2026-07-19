@@ -36,7 +36,7 @@ function audit(user, action, detail = '') {
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "https://cdn.discordapp.com"], connectSrc: ["'self'"] } } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.use(express.static(path.join(__dirname, 'public'), { index: false, maxAge: 0, etag: false, lastModified: false }));
 app.use(morgan('short'));
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
