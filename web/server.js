@@ -245,4 +245,31 @@ app.post('/api/unban', apiAuth, actionLimiter, async (req, res) => {
   try { await axios.post(`${BASE_API}/unban`, { userid: uid }, AX); audit(req.authUser.username, 'UNBAN', uid); res.redirect('/?token='+getToken(req)+'&msg=Unbanned'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 
+// ── Standalone console page (zero JS, pure HTML form) ────────────────
+app.get('/console', (req, res) => {
+  const u = requireAuth(req);
+  if (!u) return res.redirect('/');
+  const token = getToken(req);
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>RCON Console - Relaxaurus</title>
+<style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:'Courier New',monospace;background:#0a0a0a;color:#0f0;min-height:100vh;display:flex;flex-direction:column}#out{flex:1;padding:16px;overflow-y:auto;white-space:pre-wrap;font-size:.85rem;line-height:1.5}#out .cmd{color:#fff}#out .resp{color:#0f0}#out .err{color:#f44}#out .info{color:#888}form{display:flex;padding:12px;background:#111;border-top:1px solid #222}form span{color:#0f0;display:flex;align-items:center;padding:0 8px;font-weight:bold;font-size:1.1rem}input{flex:1;background:#000;border:1px solid #333;color:#0f0;padding:10px 14px;font-family:inherit;font-size:.9rem;outline:none}input:focus{border-color:#0f0}button{padding:10px 20px;background:#0a0;color:#fff;border:none;font-family:inherit;font-size:.9rem;cursor:pointer;margin-left:8px}button:hover{background:#0c0}.top{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#111;border-bottom:1px solid #222;font-size:.8rem}.top a{color:#888;text-decoration:none}</style></head><body>
+<div class="top"><span>RCON Console</span><span>${u.username} (${u.role})</span><a href="/">← Dashboard</a></div>
+<div id="out"><div class="info">Connected. Type a command below.</div></div>
+<form method="post" action="/console/exec" target="hidden-frame"><input type="hidden" name="token" value="${token}"><span>></span><input type="text" name="cmd" id="cmd" placeholder="ShowPlayers" autofocus autocomplete="off"><button type="submit">Send</button></form>
+<iframe name="hidden-frame" style="display:none" onload="try{var d=JSON.parse(this.contentDocument.body.textContent||'{}');var o=document.getElementById('out');o.innerHTML+='\\n<div class=cmd>> '+document.getElementById('cmd').value+'</div>';o.innerHTML+='<div class='+(d.error?'err':'resp')+'>'+(d.output||d.error||'(no response)')+'</div>';o.scrollTop=o.scrollHeight;document.getElementById('cmd').value=''}catch(e){}"></iframe>
+<script>document.getElementById('cmd').focus();</script></body></html>`);
+});
+
+app.post('/console/exec', apiAuth, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.json({ error: 'Admin access required' });
+  const cmd = (req.body.cmd || '').replace(/[;&|`$]/g, '').trim().slice(0, 200);
+  if (!cmd) return res.json({ error: 'Command required' });
+  const { exec } = require('child_process');
+  exec(`docker exec palworld-server rcon-cli "${cmd}"`, { timeout: 12000 }, (err, stdout) => {
+    let output = (stdout || '').replace(/^Waiting commands for.*\n?/gm, '').replace(/\n?>$/, '').replace(/\x00/g, '').trim();
+    output = output.replace(/\ncli: execute:.*i\/o timeout$/, '').trim();
+    audit(req.authUser.username, 'RCON', cmd);
+    res.json({ output: output || '(no output)' });
+  });
+});
+
 app.listen(PORT, () => console.log(`Dashboard on http://localhost:${PORT}`));
