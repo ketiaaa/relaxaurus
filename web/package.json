@@ -1,0 +1,21 @@
+{
+  "name": "relaxaurus-web",
+  "version": "1.0.0",
+  "description": "Secure web dashboard for Palworld server management",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "cookie-parser": "^1.4.6",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "morgan": "^1.10.0"
+  }
+}
