@@ -110,6 +110,19 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
+// RCON command execution
+app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.status(403).json({ error: 'Admin only' });
+  const cmd = (req.body.cmd || '').replace(/[;&|`$]/g, '').trim().slice(0, 200);
+  if (!cmd) return res.status(400).json({ error: 'Command required' });
+  const { exec } = require('child_process');
+  exec(`docker exec palworld-server rcon-cli "${cmd}"`, { timeout: 5000 }, (err, stdout, stderr) => {
+    if (err) return res.status(502).json({ error: err.message, output: stderr || stdout });
+    audit(req.authUser.username, 'RCON', cmd);
+    return res.json({ output: stdout.trim() || 'Command sent' });
+  });
+});
+
 // API proxy
 function apiAuth(req, res, next) {
   const u = requireAuth(req);

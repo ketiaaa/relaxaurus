@@ -253,7 +253,7 @@ function initConsole() {
   out.scrollTop = out.scrollHeight;
   document.getElementById('console-input')?.focus();
 }
-function handleConsoleKey(e) {
+async function handleConsoleKey(e) {
   const inp = document.getElementById('console-input');
   if (e.key === 'Enter') {
     const cmd = inp.value.trim();
@@ -261,9 +261,17 @@ function handleConsoleKey(e) {
     cmdHistory.push(cmd); cmdIdx = cmdHistory.length;
     const out = document.getElementById('console-output');
     out.innerHTML += `<div class="line cmd">> ${esc(cmd)}</div>`;
-    out.innerHTML += `<div class="line rc">Command sent: ${esc(cmd)}</div>`;
-    out.scrollTop = out.scrollHeight;
     inp.value = '';
+    out.scrollTop = out.scrollHeight;
+    // Send to real RCON
+    try {
+      const r = await fetch('/api/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }, body: JSON.stringify({ cmd }) });
+      const data = await r.json();
+      out.innerHTML += `<div class="line rc">${esc(data.output || data.error || 'No response')}</div>`;
+    } catch {
+      out.innerHTML += `<div class="line error">Connection failed</div>`;
+    }
+    out.scrollTop = out.scrollHeight;
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     if (cmdIdx > 0) { cmdIdx--; inp.value = cmdHistory[cmdIdx]; }
