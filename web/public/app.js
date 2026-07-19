@@ -9,32 +9,44 @@ let mockEnabled = false;
 
 // ── Init ─────────────────────────────────────────────────────────────
 (() => {
-  // Extract token from URL
+  // Server-injected auth (most reliable)
+  if (window.__AUTH__) {
+    token = window.__AUTH__.token;
+    user = window.__AUTH__.user;
+    sessionStorage.setItem('token', token);
+    showApp();
+    return;
+  }
+
+  // Fallback: URL token from OAuth callback
   const params = new URLSearchParams(window.location.search);
   if (params.has('token')) {
     token = params.get('token');
     sessionStorage.setItem('token', token);
-    window.history.replaceState({}, document.title, '/');
-  } else {
-    token = sessionStorage.getItem('token');
+    // Reload so server injects auth
+    location.href = '/?token=' + token;
+    return;
   }
 
-  // Decode JWT payload
+  // Check sessionStorage
+  token = sessionStorage.getItem('token');
   if (token) {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       user = { username: payload.username, role: payload.role, avatar: payload.avatar };
       showApp();
-    } catch { showLogin(); }
-  } else {
-    showLogin();
+      return;
+    } catch {}
   }
 
-  // Handle login error from redirect
+  // Handle login error
   if (params.get('error')) {
-    const errMap = { not_in_guild: 'You must be a member of the Discord server.', auth_failed: 'Authentication failed.', denied: 'Login was cancelled.' };
-    setTimeout(() => showLogin(params.get('error')), 100);
+    const errs = { not_in_guild: 'You must be a member of the Discord server.', auth_failed: 'Authentication failed.', denied: 'Login was cancelled.' };
+    showLogin(params.get('error'));
+    return;
   }
+
+  showLogin();
 })();
 
 function showLogin(errCode) {

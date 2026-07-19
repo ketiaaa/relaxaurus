@@ -98,10 +98,16 @@ app.get('/logout', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Logout</title></head><body><script>sessionStorage.clear();location.href='/';</script></body></html>`);
 });
 
-// ── Main page (serve SPA) ───────────────────────────────────────────
+// ── Main page (serve SPA with injected auth) ────────────────────────
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const u = requireAuth(req, res);
+  const t = getToken(req);
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  if (u) {
+    html = html.replace('</head>', `<script>window.__AUTH__ = ${JSON.stringify({ token: t, user: { username: u.username, role: u.role, avatar: u.avatar } })};</script></head>`);
+  }
+  res.send(html);
 });
 
 // ── API proxy ────────────────────────────────────────────────────────
