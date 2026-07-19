@@ -20,6 +20,7 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_GUILD_ID = process.env.GUILD_ID;
 const ADMIN_ROLE_ID = process.env.DASHBOARD_ADMIN_ROLE_ID || '';
+const OPERATOR_ROLE_ID = process.env.DASHBOARD_OPERATOR_ROLE_ID || '';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 const BASE_API = `http://${PALWORLD_HOST}:${REST_PORT}/v1/api`;
@@ -51,6 +52,7 @@ function requireAuth(req, res) {
   try { return jwt.verify(t, JWT_SECRET); } catch { return null; }
 }
 function isAdmin(u) { return u?.role === 'admin'; }
+function canOperate(u) { return u?.role === 'admin' || u?.role === 'operator'; }
 
 // ── Discord OAuth ────────────────────────────────────────────────────
 app.get('/auth/login', (req, res) => {
@@ -75,6 +77,7 @@ app.get('/auth/callback', async (req, res) => {
           if (process.env.DISCORD_TOKEN) {
             const m = await axios.get(`https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`, { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } });
             if (ADMIN_ROLE_ID && m.data.roles?.includes(ADMIN_ROLE_ID)) role = 'admin';
+            else if (OPERATOR_ROLE_ID && m.data.roles?.includes(OPERATOR_ROLE_ID)) role = 'operator';
           }
         } else {
           return res.redirect('/?error=not_in_guild');
@@ -102,6 +105,7 @@ app.get('/', (req, res) => {
 
   if (u) {
     const admin = isAdmin(u);
+    const op = canOperate(u);
 
     // Fetch server stats for initial render
     async function fetchStats() {
@@ -126,7 +130,7 @@ app.get('/', (req, res) => {
     }
 
     // Render page immediately with loading state, then JS refreshes
-    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Relaxaurus Dashboard</title><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}:root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e4e6ed;--muted:#8b8fa3;--accent:#5865f2;--green:#57f287;--red:#ed4245;--radius:8px}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border)}header h1{font-size:1.2rem}header .user{display:flex;align-items:center;gap:8px}header img{width:28px;height:28px;border-radius:50%}header a{color:var(--muted);text-decoration:none;font-size:.85rem}main{max-width:960px;margin:20px auto;padding:0 20px}.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}.stat{text-align:center;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}.stat .l{font-size:.75rem;color:var(--muted)}.stat .v{font-size:1.3rem;font-weight:600;margin-top:2px}button,.btn{padding:8px 14px;border-radius:var(--radius);border:none;font-size:.85rem;cursor:pointer;background:var(--accent);color:#fff;text-decoration:none;display:inline-block;margin:3px}button:hover,.btn:hover{opacity:.85}.btn-danger{background:var(--red)}.btn-ghost{background:transparent;color:var(--muted)}h2{font-size:1rem;margin-bottom:10px}.player{border-bottom:1px solid var(--border);padding:8px 0;display:flex;justify-content:space-between}.player:last-child{border:none}.player .n{font-weight:600}.player .m{font-size:.8rem;color:var(--muted)}.empty{color:var(--muted)}pre{background:var(--bg);padding:10px;border-radius:var(--radius);font-size:.78rem;max-height:250px;overflow-y:auto}form.inline{display:inline}.result{margin:8px 0;font-size:.85rem}.result.g{color:var(--green)}.result.r{color:var(--red)}</style></head><body><header><h1>🦖 Relaxaurus</h1><div class="user">${u.avatar?`<img src="${u.avatar}" alt="">`:''} <strong>${u.username}</strong> <span class="muted">(${u.role})</span> <a href="/logout">Logout</a></div></header><main><div class="row" id="stats"><div class="stat"><div class="l">Server</div><div class="v" id="s-name">—</div></div><div class="stat"><div class="l">Players</div><div class="v" id="s-players">—</div></div><div class="stat"><div class="l">FPS</div><div class="v" id="s-fps">—</div></div><div class="stat"><div class="l">Uptime</div><div class="v" id="s-uptime">—</div></div></div><div class="card"><h2>👥 Players</h2><div id="players"><div class="empty">Loading…</div></div></div>${admin?`<div class="card"><h2>⚙️ Controls</h2><form method="post" action="/api/save?token=${token}" class="inline"><button>💾 Save</button></form><form method="post" action="/api/shutdown?token=${token}" class="inline" onsubmit="return confirm('Shut down the server?')"><button class="btn-danger">🛑 Shutdown</button></form><form method="post" action="/api/announce?token=${token}" class="inline"><input type="text" name="msg" placeholder="Announcement message…" style="padding:7px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);width:180px"><button type="submit">📢 Announce</button></form><form method="post" action="/api/kick?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button class="btn-danger">👢 Kick</button></form><form method="post" action="/api/ban?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button class="btn-danger">🔨 Ban</button></form><form method="post" action="/api/unban?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button>✅ Unban</button></form><div id="result" class="result"></div></div>`:''}</main><script>
+    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Relaxaurus Dashboard</title><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}:root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e4e6ed;--muted:#8b8fa3;--accent:#5865f2;--green:#57f287;--red:#ed4245;--radius:8px}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border)}header h1{font-size:1.2rem}header .user{display:flex;align-items:center;gap:8px}header img{width:28px;height:28px;border-radius:50%}header a{color:var(--muted);text-decoration:none;font-size:.85rem}main{max-width:960px;margin:20px auto;padding:0 20px}.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}.stat{text-align:center;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}.stat .l{font-size:.75rem;color:var(--muted)}.stat .v{font-size:1.3rem;font-weight:600;margin-top:2px}button,.btn{padding:8px 14px;border-radius:var(--radius);border:none;font-size:.85rem;cursor:pointer;background:var(--accent);color:#fff;text-decoration:none;display:inline-block;margin:3px}button:hover,.btn:hover{opacity:.85}.btn-danger{background:var(--red)}.btn-ghost{background:transparent;color:var(--muted)}h2{font-size:1rem;margin-bottom:10px}.player{border-bottom:1px solid var(--border);padding:8px 0;display:flex;justify-content:space-between}.player:last-child{border:none}.player .n{font-weight:600}.player .m{font-size:.8rem;color:var(--muted)}.empty{color:var(--muted)}pre{background:var(--bg);padding:10px;border-radius:var(--radius);font-size:.78rem;max-height:250px;overflow-y:auto}form.inline{display:inline}.result{margin:8px 0;font-size:.85rem}.result.g{color:var(--green)}.result.r{color:var(--red)}</style></head><body><header><h1>🦖 Relaxaurus</h1><div class="user">${u.avatar?`<img src="${u.avatar}" alt="">`:''} <strong>${u.username}</strong> <span class="muted">(${u.role})</span> <a href="/logout">Logout</a></div></header><main><div class="row" id="stats"><div class="stat"><div class="l">Server</div><div class="v" id="s-name">—</div></div><div class="stat"><div class="l">Players</div><div class="v" id="s-players">—</div></div><div class="stat"><div class="l">FPS</div><div class="v" id="s-fps">—</div></div><div class="stat"><div class="l">Uptime</div><div class="v" id="s-uptime">—</div></div></div><div class="card"><h2>👥 Players</h2><div id="players"><div class="empty">Loading…</div></div></div>${op?`<div class="card"><h2>⚙️ Controls</h2><form method="post" action="/api/save?token=${token}" class="inline"><button>💾 Save</button></form><form method="post" action="/api/shutdown?token=${token}" class="inline" onsubmit="return confirm('Shut down the server?')"><button class="btn-danger">🛑 Shutdown</button></form><form method="post" action="/api/start?token=${token}" class="inline"><button>🚀 Start</button></form>${admin?`<form method="post" action="/api/announce?token=${token}" class="inline"><input type="text" name="msg" placeholder="Announcement message…" style="padding:7px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);width:180px"><button type="submit">📢 Announce</button></form><form method="post" action="/api/kick?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button class="btn-danger">👢 Kick</button></form><form method="post" action="/api/ban?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button class="btn-danger">🔨 Ban</button></form><form method="post" action="/api/unban?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button>✅ Unban</button></form>`:''}<div id="result" class="result"></div></div>`:''}</main><script>
 const T = decodeURIComponent('${encodeURIComponent(token)}');
 if (T) sessionStorage.setItem('token', T);
 const savedToken = T || sessionStorage.getItem('token');
@@ -181,12 +185,21 @@ app.get('/api/metrics', apiAuth, async (req, res) => {
 
 // Admin actions
 app.post('/api/save', apiAuth, actionLimiter, async (req, res) => {
-  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
   try { await axios.post(`${BASE_API}/save`, {}, AX); audit(req.authUser.username, 'SAVE'); res.redirect('/?token='+getToken(req)+'&saved=1'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 app.post('/api/shutdown', apiAuth, actionLimiter, async (req, res) => {
-  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
   try { await axios.post(`${BASE_API}/shutdown`, { waittime: 10, message: 'Server shutting down via dashboard' }, AX); audit(req.authUser.username, 'SHUTDOWN'); res.redirect('/?token='+getToken(req)+'&msg=Shutting+down'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
+});
+app.post('/api/start', apiAuth, actionLimiter, async (req, res) => {
+  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
+  try {
+    const { exec } = require('child_process');
+    exec('docker start palworld-server 2>/dev/null || cd /home/steam/palworld-server && docker compose up -d', (err) => { if (err) console.error('Start error:', err.message); });
+    audit(req.authUser.username, 'START');
+    res.redirect('/?token='+getToken(req)+'&msg=Starting+server');
+  } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 app.post('/api/announce', apiAuth, actionLimiter, async (req, res) => {
   if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
