@@ -245,13 +245,17 @@ async function quickAction(action) {
 // ── Console ──────────────────────────────────────────────────────────
 function renderConsole() {
   return `<div class="card" style="padding:12px"><div class="terminal" id="console-output"></div>
-    <div class="terminal-input-row"><span class="prompt">></span><input type="text" id="console-input" placeholder="Type command…" onkeydown="handleConsoleKey(event)" autofocus></div></div>`;
+    <div class="terminal-input-row"><span class="prompt">></span><input type="text" id="console-input" placeholder="Type command…" autofocus></div></div>`;
 }
 function initConsole() {
   const out = document.getElementById('console-output');
   out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
   out.scrollTop = out.scrollHeight;
-  document.getElementById('console-input')?.focus();
+  const inp = document.getElementById('console-input');
+  if (inp) {
+    inp.addEventListener('keydown', handleConsoleKey);
+    inp.focus();
+  }
 }
 async function handleConsoleKey(e) {
   const inp = document.getElementById('console-input');

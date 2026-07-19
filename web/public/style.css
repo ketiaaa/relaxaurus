@@ -103,7 +103,7 @@ tr:hover{background:rgba(255,255,255,.01)}
 .terminal .line.cmd{color:var(--accent)}
 .terminal .line.rc{color:var(--green)}
 .terminal-input-row{display:flex;gap:8px}
-.terminal-input-row input{flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:var(--green)}
+.terminal-input-row input{flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed}
 .terminal-input-row .prompt{color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center}
 
 /* Charts */
