@@ -205,7 +205,7 @@ async function quickAction(action) {
 // ── Console ──────────────────────────────────────────────────────────
 function renderConsole() {
   return `<div class="card" style="padding:12px"><div class="terminal" id="console-output"></div>
-    <div style="display:flex;gap:8px"><span style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button id="console-send-btn" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></div></div>`;
+    <div style="display:flex;gap:8px"><span style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button type="button" id="console-send-btn" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></div></div>`;
 }
 function escapeHtml(s) {
   const d = document.createElement('div');
@@ -270,7 +270,7 @@ async function initConsole() {
   if (inp) {
     inp.replaceWith(inp.cloneNode(true)); // Remove old listeners
     document.getElementById('console-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') doSend();
+      if (e.key === 'Enter') { e.preventDefault(); doSend(); }
     });
     document.getElementById('console-input').focus();
   }
