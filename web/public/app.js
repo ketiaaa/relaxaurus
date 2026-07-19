@@ -265,9 +265,20 @@ async function sendCommand(e) {
   }
   out.scrollTop = out.scrollHeight;
 }
-function initConsole() {
+async function initConsole() {
   const out = document.getElementById('console-output');
-  out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
+  out.innerHTML = '<div class="line info">Loading logs...</div>';
+  try {
+    const r = await fetch('/api/logs', { headers: { 'Authorization': 'Bearer '+token } });
+    if (r.ok) {
+      const data = await r.json();
+      out.innerHTML = (data.lines||['No logs yet']).map(l => `<div class="line info">${esc(l)}</div>`).join('');
+    } else {
+      out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
+    }
+  } catch {
+    out.innerHTML = MOCK.consoleLines.map(l => `<div class="line ${l.type}">${esc(l.text)}</div>`).join('');
+  }
   out.scrollTop = out.scrollHeight;
   document.getElementById('console-input')?.focus();
 }

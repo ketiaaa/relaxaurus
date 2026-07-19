@@ -110,6 +110,16 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
+// Real server logs
+app.get('/api/logs', apiAuth, async (req, res) => {
+  const { exec } = require('child_process');
+  exec('docker logs --tail 100 palworld-server 2>&1', { timeout: 5000 }, (err, stdout) => {
+    if (err) return res.json({ lines: ['Unable to fetch logs'] });
+    const lines = stdout.trim().split('\n').filter(Boolean).slice(-60);
+    res.json({ lines });
+  });
+});
+
 // RCON command execution
 app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
   if (!isAdmin(req.authUser)) return res.status(403).json({ error: 'Admin only' });
