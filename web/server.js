@@ -248,7 +248,10 @@ app.post('/api/unban', apiAuth, actionLimiter, async (req, res) => {
 // ── Standalone console page (zero JS, pure HTML form) ────────────────
 app.get('/console', (req, res) => {
   const u = requireAuth(req);
-  if (!u) return res.redirect('/');
+  if (!u) {
+    // Token might be in sessionStorage — send a page that redirects with it
+    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><script>var t=sessionStorage.getItem('token');if(t)location.href='/console?token='+t;else location.href='/';</script></body></html>`);
+  }
   const token = getToken(req);
   res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>RCON Console - Relaxaurus</title>
 <style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:'Courier New',monospace;background:#0a0a0a;color:#0f0;min-height:100vh;display:flex;flex-direction:column}#out{flex:1;padding:16px;overflow-y:auto;white-space:pre-wrap;font-size:.85rem;line-height:1.5}#out .cmd{color:#fff}#out .resp{color:#0f0}#out .err{color:#f44}#out .info{color:#888}form{display:flex;padding:12px;background:#111;border-top:1px solid #222}form span{color:#0f0;display:flex;align-items:center;padding:0 8px;font-weight:bold;font-size:1.1rem}input{flex:1;background:#000;border:1px solid #333;color:#0f0;padding:10px 14px;font-family:inherit;font-size:.9rem;outline:none}input:focus{border-color:#0f0}button{padding:10px 20px;background:#0a0;color:#fff;border:none;font-family:inherit;font-size:.9rem;cursor:pointer;margin-left:8px}button:hover{background:#0c0}.top{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#111;border-bottom:1px solid #222;font-size:.8rem}.top a{color:#888;text-decoration:none}</style></head><body>
