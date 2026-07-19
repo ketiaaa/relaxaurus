@@ -20,7 +20,7 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_GUILD_ID = process.env.GUILD_ID;
 const ADMIN_ROLE_ID = process.env.DASHBOARD_ADMIN_ROLE_ID || '';
-const OPERATOR_ROLE_ID = process.env.DASHBOARD_OPERATOR_ROLE_ID || '';
+const MOD_ROLE_ID = process.env.DASHBOARD_MOD_ROLE_ID || '';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 const BASE_API = `http://${PALWORLD_HOST}:${REST_PORT}/v1/api`;
@@ -52,7 +52,7 @@ function requireAuth(req, res) {
   try { return jwt.verify(t, JWT_SECRET); } catch { return null; }
 }
 function isAdmin(u) { return u?.role === 'admin'; }
-function canOperate(u) { return u?.role === 'admin' || u?.role === 'operator'; }
+function canMod(u) { return u?.role === 'admin' || u?.role === 'mod'; }
 
 // ── Discord OAuth ────────────────────────────────────────────────────
 app.get('/auth/login', (req, res) => {
@@ -77,7 +77,7 @@ app.get('/auth/callback', async (req, res) => {
           if (process.env.DISCORD_TOKEN) {
             const m = await axios.get(`https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`, { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } });
             if (ADMIN_ROLE_ID && m.data.roles?.includes(ADMIN_ROLE_ID)) role = 'admin';
-            else if (OPERATOR_ROLE_ID && m.data.roles?.includes(OPERATOR_ROLE_ID)) role = 'operator';
+            else if (MOD_ROLE_ID && m.data.roles?.includes(MOD_ROLE_ID)) role = 'mod';
           }
         } else {
           return res.redirect('/?error=not_in_guild');
@@ -105,7 +105,7 @@ app.get('/', (req, res) => {
 
   if (u) {
     const admin = isAdmin(u);
-    const op = canOperate(u);
+    const op = canMod(u);
 
     // Fetch server stats for initial render
     async function fetchStats() {
@@ -185,15 +185,15 @@ app.get('/api/metrics', apiAuth, async (req, res) => {
 
 // Admin actions
 app.post('/api/save', apiAuth, actionLimiter, async (req, res) => {
-  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
+  if (!canMod(req.authUser)) return res.status(403).send('Mod or admin required');
   try { await axios.post(`${BASE_API}/save`, {}, AX); audit(req.authUser.username, 'SAVE'); res.redirect('/?token='+getToken(req)+'&saved=1'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 app.post('/api/shutdown', apiAuth, actionLimiter, async (req, res) => {
-  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
+  if (!canMod(req.authUser)) return res.status(403).send('Mod or admin required');
   try { await axios.post(`${BASE_API}/shutdown`, { waittime: 10, message: 'Server shutting down via dashboard' }, AX); audit(req.authUser.username, 'SHUTDOWN'); res.redirect('/?token='+getToken(req)+'&msg=Shutting+down'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 app.post('/api/start', apiAuth, actionLimiter, async (req, res) => {
-  if (!canOperate(req.authUser)) return res.status(403).send('Operator or admin required');
+  if (!canMod(req.authUser)) return res.status(403).send('Mod or admin required');
   try {
     const { exec } = require('child_process');
     exec('docker start palworld-server 2>/dev/null || cd /home/steam/palworld-server && docker compose up -d', (err) => { if (err) console.error('Start error:', err.message); });
