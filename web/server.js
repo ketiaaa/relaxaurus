@@ -118,6 +118,7 @@ function fmt(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 load(); setInterval(load, 10000);
 </script></body></html>`);
+    return;
   }
 
   // Not logged in — show login page
