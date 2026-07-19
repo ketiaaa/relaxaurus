@@ -61,7 +61,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // cloudflared handles TLS, traffic to express is localhost
     sameSite: 'lax',
     maxAge: 12 * 60 * 60 * 1000, // 12h
   },
