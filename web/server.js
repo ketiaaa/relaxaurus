@@ -2,7 +2,6 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-const cookieParser = require('cookie-parser');
 const axios = require('axios');
 const morgan = require('morgan');
 const fs = require('fs');
@@ -12,348 +11,159 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const app = express();
 app.set('trust proxy', 1);
 
-// ── Config ──────────────────────────────────────────────────────────
 const PALWORLD_HOST = process.env.PALWORLD_HOST || '127.0.0.1';
 const REST_PORT = process.env.PALWORLD_REST_PORT || 8212;
 const ADMIN_PASSWORD = process.env.PALWORLD_ADMIN_PASSWORD || 'admin';
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
+const JWT_SECRET = process.env.SESSION_SECRET || 'change-me';
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_GUILD_ID = process.env.GUILD_ID; // reuse from bot .env
-const ADMIN_ROLE_ID = process.env.DASHBOARD_ADMIN_ROLE_ID || ''; // Discord role ID for admin
-const BASE_CALLBACK = process.env.BASE_URL || `http://localhost:${PORT}`;
+const DISCORD_GUILD_ID = process.env.GUILD_ID;
+const ADMIN_ROLE_ID = process.env.DASHBOARD_ADMIN_ROLE_ID || '';
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-const BASE_URL = `http://${PALWORLD_HOST}:${REST_PORT}/v1/api`;
+const BASE_API = `http://${PALWORLD_HOST}:${REST_PORT}/v1/api`;
 const AUTH_HEADER = `Basic ${Buffer.from(`admin:${ADMIN_PASSWORD}`).toString('base64')}`;
-const axiosConfig = { headers: { Authorization: AUTH_HEADER }, timeout: 10000 };
+const AX = { headers: { Authorization: AUTH_HEADER }, timeout: 10000 };
 
-// ── Audit log ────────────────────────────────────────────────────────
 const AUDIT_LOG = path.join(__dirname, 'audit.log');
-function auditLog(username, action, details = '') {
-  const entry = `[${new Date().toISOString()}] ${username} | ${action} | ${details}\n`;
-  fs.appendFileSync(AUDIT_LOG, entry);
-}
-
-// ── No-cache for API responses ──────────────────────────────────────
-app.use('/api', (req, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-  next();
-});
-
-// ── Input sanitizer ──────────────────────────────────────────────────
-function sanitize(input) {
-  if (typeof input !== 'string') return '';
-  return input.replace(/[;&|`$(){}[\]\\"']/g, '').trim().slice(0, 256);
+function audit(user, action, detail = '') {
+  fs.appendFileSync(AUDIT_LOG, `[${new Date().toISOString()}] ${user} | ${action} | ${detail}\n`);
 }
 
 // ── Middleware ───────────────────────────────────────────────────────
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", "https://discord.com"],
-      imgSrc: ["'self'", "https://cdn.discordapp.com"],
-    },
-  },
-}));
-app.use(cookieParser());
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", "https://cdn.discordapp.com"], connectSrc: ["'self'"] } } }));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(morgan('short'));
 
-// Rate limiting
-const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Rate limit exceeded' } });
-const actionLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Action rate limit exceeded' } });
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
+const actionLimiter = rateLimit({ windowMs: 60 * 1000, max: 10 });
 app.use('/api', apiLimiter);
 
-// ── Discord OAuth2 ──────────────────────────────────────────────────
-async function getDiscordUser(accessToken) {
-  const r = await axios.get('https://discord.com/api/users/@me', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return r.data;
+// ── Auth helpers ─────────────────────────────────────────────────────
+function getToken(req) {
+  return req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
 }
-
-async function getGuildMember(userId, accessToken) {
-  if (!DISCORD_GUILD_ID) return null;
-  try {
-    // Check if user is in our guild
-    const guildsR = await axios.get('https://discord.com/api/users/@me/guilds', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const inGuild = guildsR.data.some(g => g.id === DISCORD_GUILD_ID);
-    if (!inGuild) return null;
-
-    // Get member with roles via bot token
-    if (process.env.DISCORD_TOKEN) {
-      const memberR = await axios.get(
-        `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${userId}`,
-        { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } }
-      );
-      return memberR.data;
-    }
-    // Fallback: basic guild membership without role info
-    return { user: { id: userId }, guild_id: DISCORD_GUILD_ID, roles: [] };
-  } catch (e) {
-    console.error('Guild check error:', e.message);
-    return null;
-  }
+function requireAuth(req, res) {
+  const t = getToken(req);
+  if (!t) return null;
+  try { return jwt.verify(t, JWT_SECRET); } catch { return null; }
 }
+function isAdmin(u) { return u?.role === 'admin'; }
 
-function getUserRole(member) {
-  if (!member) return 'viewer';
-  if (ADMIN_ROLE_ID && member.roles?.includes(ADMIN_ROLE_ID)) return 'admin';
-  // Guild owner is always admin
-  if (member.user?.id === member.guild_id) return 'admin';
-  // If no admin role configured, first login = viewer
-  return 'viewer';
-}
-
-app.get('/api/auth/login', (req, res) => {
-  const redirect = encodeURIComponent(`${BASE_CALLBACK}/api/auth/callback`);
-  res.redirect(
-    `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}` +
-    `&redirect_uri=${redirect}&response_type=code&scope=identify%20guilds`
-  );
+// ── Discord OAuth ────────────────────────────────────────────────────
+app.get('/auth/login', (req, res) => {
+  const cb = encodeURIComponent(`${BASE_URL}/auth/callback`);
+  res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${cb}&response_type=code&scope=identify%20guilds`);
 });
 
-app.get('/api/auth/callback', async (req, res) => {
+app.get('/auth/callback', async (req, res) => {
   const { code, error } = req.query;
-  if (error || !code) return res.redirect('/?error=discord_denied');
-
+  if (error || !code) return res.redirect('/?error=denied');
   try {
-    // Exchange code for token
-    const tokenR = await axios.post('https://discord.com/api/oauth2/token',
-      new URLSearchParams({
-        client_id: DISCORD_CLIENT_ID,
-        client_secret: DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: `${BASE_CALLBACK}/api/auth/callback`,
-      }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
-
-    const user = await getDiscordUser(tokenR.data.access_token);
-    const member = await getGuildMember(user.id, tokenR.data.access_token);
-    const role = getUserRole(member);
-
-    const sessionUser = {
-      id: user.id,
-      username: user.username,
-      avatar: user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null,
-      role,
-    };
-
-    const jwtToken = jwt.sign(sessionUser, JWT_SECRET, { expiresIn: '12h' });
-    auditLog(user.username, 'LOGIN', `role=${role}`);
-    res.redirect(`/?token=${jwtToken}`);
+    const tr = await axios.post('https://discord.com/api/oauth2/token',
+      new URLSearchParams({ client_id: DISCORD_CLIENT_ID, client_secret: DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${BASE_URL}/auth/callback` }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const du = await axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tr.data.access_token}` } });
+    const user = du.data;
+    let role = 'viewer';
+    if (DISCORD_GUILD_ID) {
+      try {
+        const guilds = await axios.get('https://discord.com/api/users/@me/guilds', { headers: { Authorization: `Bearer ${tr.data.access_token}` } });
+        if (guilds.data.some(g => g.id === DISCORD_GUILD_ID)) {
+          if (process.env.DISCORD_TOKEN) {
+            const m = await axios.get(`https://discord.com/api/guilds/${DISCORD_GUILD_ID}/members/${user.id}`, { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } });
+            if (ADMIN_ROLE_ID && m.data.roles?.includes(ADMIN_ROLE_ID)) role = 'admin';
+          }
+        } else {
+          return res.redirect('/?error=not_in_guild');
+        }
+      } catch { role = 'viewer'; }
+    }
+    const token = jwt.sign({ id: user.id, username: user.username, avatar: user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null, role }, JWT_SECRET, { expiresIn: '12h' });
+    audit(user.username, 'LOGIN', `role=${role}`);
+    res.redirect(`/?token=${token}`);
   } catch (e) {
     console.error('OAuth error:', e.message);
     res.redirect('/?error=auth_failed');
   }
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  clearUserCookie(res);
-  return res.json({ ok: true });
+// ── Main page (server-rendered) ──────────────────────────────────────
+app.get('/', (req, res) => {
+  const u = requireAuth(req, res);
+  const token = getToken(req);
+
+  if (u) {
+    const admin = isAdmin(u);
+    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Relaxaurus Dashboard</title><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}:root{--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3a;--text:#e4e6ed;--muted:#8b8fa3;--accent:#5865f2;--green:#57f287;--red:#ed4245;--radius:8px}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border)}header h1{font-size:1.2rem}header .user{display:flex;align-items:center;gap:8px}header img{width:28px;height:28px;border-radius:50%}header a{color:var(--muted);text-decoration:none;font-size:.85rem}main{max-width:960px;margin:20px auto;padding:0 20px}.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}.stat{text-align:center;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}.stat .l{font-size:.75rem;color:var(--muted)}.stat .v{font-size:1.3rem;font-weight:600;margin-top:2px}button,.btn{padding:8px 14px;border-radius:var(--radius);border:none;font-size:.85rem;cursor:pointer;background:var(--accent);color:#fff;text-decoration:none;display:inline-block;margin:3px}button:hover,.btn:hover{opacity:.85}.btn-danger{background:var(--red)}.btn-ghost{background:transparent;color:var(--muted)}h2{font-size:1rem;margin-bottom:10px}.player{border-bottom:1px solid var(--border);padding:8px 0;display:flex;justify-content:space-between}.player:last-child{border:none}.player .n{font-weight:600}.player .m{font-size:.8rem;color:var(--muted)}.empty{color:var(--muted)}pre{background:var(--bg);padding:10px;border-radius:var(--radius);font-size:.78rem;max-height:250px;overflow-y:auto}form.inline{display:inline}.result{margin:8px 0;font-size:.85rem}.result.g{color:var(--green)}.result.r{color:var(--red)}</style></head><body><header><h1>🦖 Relaxaurus</h1><div class="user">${u.avatar?`<img src="${u.avatar}" alt="">`:''} <strong>${u.username}</strong> <span class="muted">(${u.role})</span> <a href="/?logout=1">Logout</a></div></header><main><div class="row" id="stats"><div class="stat"><div class="l">Server</div><div class="v" id="s-name">—</div></div><div class="stat"><div class="l">Players</div><div class="v" id="s-players">—</div></div><div class="stat"><div class="l">FPS</div><div class="v" id="s-fps">—</div></div><div class="stat"><div class="l">Uptime</div><div class="v" id="s-uptime">—</div></div></div><div class="card"><h2>👥 Players</h2><div id="players"><div class="empty">Loading…</div></div></div>${admin?`<div class="card"><h2>⚙️ Controls</h2><form method="post" action="/api/save?token=${token}" class="inline"><button>💾 Save</button></form><form method="post" action="/api/shutdown?token=${token}" class="inline" onsubmit="return confirm('Shut down the server?')"><button class="btn-danger">🛑 Shutdown</button></form><form method="post" action="/api/announce?token=${token}" class="inline" onsubmit="const m=prompt('Message:');if(!m)return false;this.elements.msg.value=m"><input type="hidden" name="msg"><button>📢 Announce</button></form><form method="post" action="/api/kick?token=${token}" class="inline" onsubmit="const u=prompt('SteamID:');if(!u)return false;this.elements.uid.value=u"><input type="hidden" name="uid"><button class="btn-danger">👢 Kick</button></form><div id="result" class="result"></div></div>`:''}</main><script>
+const T = '${token}';
+async function load() {
+  try {
+    const [i,p,m] = await Promise.all([
+      fetch('/api/info?token='+T).then(r=>r.json()).catch(()=>null),
+      fetch('/api/players?token='+T).then(r=>r.json()).catch(()=>null),
+      fetch('/api/metrics?token='+T).then(r=>r.json()).catch(()=>null)
+    ]);
+    if (i) { document.getElementById('s-name').textContent = i.servername||'—'; }
+    if (m) { document.getElementById('s-players').textContent = (m.currentplayernum||0)+'/'+(m.maxplayernum||0); document.getElementById('s-fps').textContent = m.serverfps||'—'; document.getElementById('s-uptime').textContent = fmt(m.uptime||0); }
+    const pl = p?.players;
+    const d = document.getElementById('players');
+    if (pl?.length) { d.innerHTML = pl.map(x=>'<div class="player"><div><div class="n">'+esc(x.name)+' — Lv.'+x.level+'</div><div class="m">'+esc(x.userId||'N/A')+' | '+(x.ping||'?')+'ms</div></div></div>').join(''); }
+    else { d.innerHTML = '<div class="empty">No players online.</div>'; }
+  } catch(e) {}
+}
+function fmt(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h+'h '+m+'m'; }
+function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+load(); setInterval(load, 10000);
+</script></body></html>`);
+  }
+
+  // Not logged in — show login page
+  const error = req.query.error;
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Relaxaurus Dashboard</title><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e4e6ed;display:flex;align-items:center;justify-content:center;min-height:100vh}.card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:8px;padding:40px;text-align:center;max-width:360px;width:100%}h1{font-size:2rem;margin-bottom:4px}p.sub{color:#8b8fa3;margin-bottom:24px}a.btn{display:block;padding:12px;background:#5865f2;color:#fff;text-decoration:none;border-radius:8px;font-size:1rem;font-weight:500}a.btn:hover{opacity:.9}.err{color:#ed4245;margin-top:12px;font-size:.85rem}</style></head><body><div class="card"><h1>🦖 Relaxaurus</h1><p class="sub">Palworld Server Dashboard</p><a href="/auth/login" class="btn">🔑 Sign in with Discord</a>${error ? `<p class="err">${error==='not_in_guild'?'You must be a member of the Discord server to access.':error==='auth_failed'?'Authentication failed. Please try again.':error==='denied'?'Login was cancelled.':''}</p>` : ''}</div></body></html>`);
 });
 
-app.get('/api/auth/me', (req, res) => {
-  const token = getToken(req);
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  try {
-    return res.json(jwt.verify(token, JWT_SECRET));
-  } catch {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-// ── JWT cookie helpers ──────────────────────────────────────────────
-function setUserCookie(res, user) {
-  const token = jwt.sign(user, JWT_SECRET, { expiresIn: '12h' });
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'none',
-    maxAge: 12 * 60 * 60 * 1000,
-    path: '/',
-  });
-}
-
-function clearUserCookie(res) {
-  res.clearCookie('token', { path: '/' });
-}
-
-// ── Auth middleware ──────────────────────────────────────────────────
-function getToken(req) {
-  return req.cookies?.token || (req.headers.authorization || '').replace('Bearer ', '');
-}
-
-function authenticate(req, res, next) {
-  const token = getToken(req);
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
-
-function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+// ── API proxy ────────────────────────────────────────────────────────
+function apiAuth(req, res, next) {
+  const u = requireAuth(req, res);
+  if (!u) return res.status(401).json({ error: 'Auth required' });
+  req.authUser = u;
   next();
 }
 
-// ── REST API proxy (read-only, any authenticated user) ───────────────
-app.get('/api/server/info', authenticate, async (req, res) => {
-  try {
-    const r = await axios.get(`${BASE_URL}/info`, axiosConfig);
-    return res.json(r.data);
-  } catch (e) {
-    return res.status(502).json({ error: 'Server unreachable', detail: e.message });
-  }
+app.get('/api/info', apiAuth, async (req, res) => {
+  try { const r = await axios.get(`${BASE_API}/info`, AX); res.json(r.data); } catch(e) { res.status(502).json({ error: e.message }); }
+});
+app.get('/api/players', apiAuth, async (req, res) => {
+  try { const r = await axios.get(`${BASE_API}/players`, AX); res.json(r.data); } catch(e) { res.status(502).json({ error: e.message }); }
+});
+app.get('/api/metrics', apiAuth, async (req, res) => {
+  try { const r = await axios.get(`${BASE_API}/metrics`, AX); res.json(r.data); } catch(e) { res.status(502).json({ error: e.message }); }
 });
 
-app.get('/api/server/players', authenticate, async (req, res) => {
-  try {
-    const r = await axios.get(`${BASE_URL}/players`, axiosConfig);
-    return res.json(r.data);
-  } catch (e) {
-    return res.status(502).json({ error: 'Server unreachable', detail: e.message });
-  }
+// Admin actions
+app.post('/api/save', apiAuth, actionLimiter, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  try { await axios.post(`${BASE_API}/save`, {}, AX); audit(req.authUser.username, 'SAVE'); res.redirect('/?token='+getToken(req)+'&saved=1'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
-
-app.get('/api/server/metrics', authenticate, async (req, res) => {
-  try {
-    const r = await axios.get(`${BASE_URL}/metrics`, axiosConfig);
-    return res.json(r.data);
-  } catch (e) {
-    return res.status(502).json({ error: 'Server unreachable', detail: e.message });
-  }
+app.post('/api/shutdown', apiAuth, actionLimiter, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  try { await axios.post(`${BASE_API}/shutdown`, { waittime: 10, message: 'Server shutting down via dashboard' }, AX); audit(req.authUser.username, 'SHUTDOWN'); res.redirect('/?token='+getToken(req)+'&msg=Shutting+down'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
-
-app.get('/api/server/settings', authenticate, async (req, res) => {
-  try {
-    const r = await axios.get(`${BASE_URL}/settings`, axiosConfig);
-    return res.json(r.data);
-  } catch (e) {
-    return res.status(502).json({ error: 'Server unreachable', detail: e.message });
-  }
+app.post('/api/announce', apiAuth, actionLimiter, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  const msg = (req.body.msg || '').replace(/[;&|`$(){}[\]\\"']/g, '').slice(0, 256);
+  if (!msg) return res.redirect('/?token='+getToken(req)+'&error=Message+required');
+  try { await axios.post(`${BASE_API}/announce`, { message: msg }, AX); audit(req.authUser.username, 'ANNOUNCE', msg); res.redirect('/?token='+getToken(req)+'&msg=Announced'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
-
-// ── Admin-only actions ───────────────────────────────────────────────
-app.post('/api/server/save', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  try {
-    await axios.post(`${BASE_URL}/save`, {}, axiosConfig);
-    auditLog(req.user.username, 'SAVE');
-    return res.json({ ok: true, message: 'World saved' });
-  } catch (e) {
-    auditLog(req.user.username, 'SAVE_FAILED', e.message);
-    return res.status(502).json({ error: 'Save failed', detail: e.message });
-  }
-});
-
-app.post('/api/server/shutdown', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  const waittime = Math.min(Math.max(parseInt(req.body.waittime) || 10, 0), 60);
-  const message = sanitize(req.body.message || 'Server shutting down...');
-  try {
-    await axios.post(`${BASE_URL}/shutdown`, { waittime, message }, axiosConfig);
-    auditLog(req.user.username, 'SHUTDOWN', `waittime=${waittime} msg="${message}"`);
-    return res.json({ ok: true, message: `Shutting down in ${waittime}s` });
-  } catch (e) {
-    auditLog(req.user.username, 'SHUTDOWN_FAILED', e.message);
-    return res.status(502).json({ error: 'Shutdown failed', detail: e.message });
-  }
-});
-
-app.post('/api/server/announce', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  const message = sanitize(req.body.message);
-  if (!message) return res.status(400).json({ error: 'Message required' });
-  try {
-    await axios.post(`${BASE_URL}/announce`, { message }, axiosConfig);
-    auditLog(req.user.username, 'ANNOUNCE', `"${message}"`);
-    return res.json({ ok: true, message: 'Announcement sent' });
-  } catch (e) {
-    return res.status(502).json({ error: 'Announce failed', detail: e.message });
-  }
-});
-
-app.post('/api/server/kick', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  const userid = sanitize(req.body.userid);
-  const message = sanitize(req.body.message || '');
-  if (!userid) return res.status(400).json({ error: 'User ID required' });
-  try {
-    await axios.post(`${BASE_URL}/kick`, { userid, message }, axiosConfig);
-    auditLog(req.user.username, 'KICK', `userid=${userid}`);
-    return res.json({ ok: true, message: `Kicked ${userid}` });
-  } catch (e) {
-    return res.status(502).json({ error: 'Kick failed', detail: e.message });
-  }
-});
-
-app.post('/api/server/ban', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  const userid = sanitize(req.body.userid);
-  if (!userid) return res.status(400).json({ error: 'User ID required' });
-  try {
-    await axios.post(`${BASE_URL}/ban`, { userid }, axiosConfig);
-    auditLog(req.user.username, 'BAN', `userid=${userid}`);
-    return res.json({ ok: true, message: `Banned ${userid}` });
-  } catch (e) {
-    return res.status(502).json({ error: 'Ban failed', detail: e.message });
-  }
-});
-
-app.post('/api/server/unban', authenticate, requireAdmin, actionLimiter, async (req, res) => {
-  const userid = sanitize(req.body.userid);
-  if (!userid) return res.status(400).json({ error: 'User ID required' });
-  try {
-    await axios.post(`${BASE_URL}/unban`, { userid }, axiosConfig);
-    auditLog(req.user.username, 'UNBAN', `userid=${userid}`);
-    return res.json({ ok: true, message: `Unbanned ${userid}` });
-  } catch (e) {
-    return res.status(502).json({ error: 'Unban failed', detail: e.message });
-  }
-});
-
-// ── Audit log viewer (admin only) ────────────────────────────────────
-app.get('/api/audit', authenticate, requireAdmin, (req, res) => {
-  try {
-    const lines = fs.readFileSync(AUDIT_LOG, 'utf8').split('\n').filter(Boolean).slice(-100);
-    return res.json({ entries: lines });
-  } catch {
-    return res.json({ entries: [] });
-  }
-});
-
-// ── Root with injected session ───────────────────────────────────────
-app.get('/', (req, res) => {
-  const token = getToken(req) || req.query.token;
-  let userData = null;
-  if (token) {
-    try { userData = jwt.verify(token, JWT_SECRET); } catch {}
-  }
-  const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
-  const injected = html.replace('</head>',
-    `<script>window.__USER__ = ${JSON.stringify(userData)};</script></head>`);
-  res.send(injected);
-});
-
-// ── SPA fallback ─────────────────────────────────────────────────────
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  } else {
-    res.status(404).json({ error: 'Not found' });
-  }
+app.post('/api/kick', apiAuth, actionLimiter, async (req, res) => {
+  if (!isAdmin(req.authUser)) return res.status(403).send('Admin only');
+  const uid = (req.body.uid || '').replace(/[;&|`$(){}[\]\\"']/g, '').slice(0, 32);
+  if (!uid) return res.redirect('/?token='+getToken(req)+'&error=SteamID+required');
+  try { await axios.post(`${BASE_API}/kick`, { userid: uid }, AX); audit(req.authUser.username, 'KICK', uid); res.redirect('/?token='+getToken(req)+'&msg=Kicked'); } catch(e) { res.redirect('/?token='+getToken(req)+'&error='+encodeURIComponent(e.message)); }
 });
 
 // ── Start ────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`Relaxaurus Web Dashboard running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Dashboard on http://localhost:${PORT}`));
