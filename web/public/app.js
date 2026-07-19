@@ -3,9 +3,6 @@ let user = null;
 let token = null;
 let serverOnline = false;
 let charts = {};
-let cmdHistory = [];
-let cmdIdx = -1;
-let mockEnabled = false;
 
 // ── Init ─────────────────────────────────────────────────────────────
 (() => {
@@ -88,53 +85,6 @@ async function apiAction(url) {
 
 function isAdmin() { return user?.role === 'admin'; }
 
-// ── Mock data ────────────────────────────────────────────────────────
-const MOCK = {
-  info: { servername: 'Pipot', version: 'v1.0.1.100619', worldguid: '26D9E79FDA5D4FB1B32CB9692D604541' },
-  metrics: { currentplayernum: 5, maxplayernum: 10, serverfps: 45, serverframetime: 22, uptime: 42360 },
-  players: [
-    { name: 'tia', level: 80, userId: 'steam_76561199099509964', ping: 64.64, location_x: -465674, location_y: -62343 },
-    { name: 'potaaa', level: 80, userId: 'steam_76561199080372985', ping: 164.29, location_x: -740588, location_y: -266305 },
-    { name: '宝宝', level: 80, userId: 'steam_76561198986841419', ping: 527.36, location_x: -345086, location_y: 343337 },
-    { name: 'ShadowGamer', level: 62, userId: 'steam_76561198234567890', ping: 89.12, location_x: -230000, location_y: 150000 },
-    { name: 'PalHunter99', level: 45, userId: 'steam_76561198123456789', ping: 42.50, location_x: -500000, location_y: -100000 },
-  ],
-  backups: [
-    { name: 'world-2026-07-20-02-00', time: '2026-07-20 02:00', size: '24.5 MB' },
-    { name: 'world-2026-07-20-01-00', time: '2026-07-20 01:00', size: '24.3 MB' },
-    { name: 'world-2026-07-19-23-00', time: '2026-07-19 23:00', size: '24.1 MB' },
-    { name: 'world-2026-07-19-20-00', time: '2026-07-19 20:00', size: '23.8 MB' },
-  ],
-  settings: {
-    SERVER_NAME: 'Pipot', SERVER_DESCRIPTION: '', PLAYERS: '10', ADMIN_PASSWORD: '••••••',
-    EXP_RATE: '10.0', PAL_CAPTURE_RATE: '2.0', DAYTIME_SPEEDRATE: '1.0', IS_PVP: 'false',
-    DEATH_PENALTY: 'Item', PAL_EGG_DEFAULT_HATCHING_TIME: '0.01', ENABLE_INVADER_ENEMY: 'false',
-    BASE_CAMP_MAX_NUM_IN_GUILD: '10', BASE_CAMP_WORKER_MAX_NUM: '50',
-  },
-  consoleLines: [
-    { type: 'info', text: '[2026-07-20 02:04:12] Server initialized. Game version v1.0.1.100619' },
-    { type: 'info', text: '[2026-07-20 02:04:15] REST API started on port 8212' },
-    { type: 'rc', text: '[2026-07-20 02:04:16] Running Palworld dedicated server on :8211' },
-    { type: 'info', text: '[2026-07-20 02:05:22] Player tia joined (steam_76561199099509964)' },
-    { type: 'info', text: '[2026-07-20 02:08:45] Player potaaa joined (steam_76561199080372985)' },
-    { type: 'warn', text: '[2026-07-20 02:15:30] Auto-save completed in 1.2s' },
-    { type: 'info', text: '[2026-07-20 02:25:30] Auto-save completed in 1.1s' },
-    { type: 'rc', text: '> Broadcast Hello everyone!' },
-    { type: 'warn', text: '[2026-07-20 02:35:30] Auto-save completed in 1.3s' },
-  ],
-};
-
-function cpuData() {
-  const data = []; let v = 35 + Math.random() * 20;
-  for (let i = 30; i >= 0; i--) { v = Math.max(5, Math.min(90, v + (Math.random() - 0.5) * 15)); data.push({ x: i, y: Math.round(v) }); }
-  return data;
-}
-function ramData() {
-  const data = []; let v = 420 + Math.random() * 80;
-  for (let i = 30; i >= 0; i--) { v = Math.max(200, Math.min(700, v + (Math.random() - 0.5) * 50)); data.push({ x: i, y: Math.round(v) }); }
-  return data;
-}
-
 // ── Render ───────────────────────────────────────────────────────────
 function render(view) {
   const c = document.getElementById('content-area');
@@ -154,8 +104,7 @@ function render(view) {
 }
 
 async function updateTopBar() {
-  const data = await api('/api/info') || MOCK.info;
-  const metrics = await api('/api/metrics') || MOCK.metrics;
+  const data = await api('/api/info');
   serverOnline = !!data;
   document.getElementById('tb-server').textContent = data?.servername || 'Offline';
   const pill = document.getElementById('tb-status');
@@ -192,45 +141,56 @@ function initDashboard() {
   refreshDash();
   setInterval(refreshDash, 10000);
 }
+const CHART_HISTORY = { cpu: Array(30).fill(null), ram: Array(30).fill(null) };
+
 async function refreshDash() {
-  const m = await api('/api/metrics') || MOCK.metrics;
-  const info = await api('/api/info') || MOCK.info;
-  const p = await api('/api/players') || { players: MOCK.players };
+  const m = await api('/api/metrics');
+  const info = await api('/api/info');
+  const p = await api('/api/players');
+  const host = await api('/api/host');
   serverOnline = !!info;
   document.getElementById('ds-name').textContent = info?.servername || 'Offline';
-  document.getElementById('ds-players').textContent = (m?.currentplayernum||0) + '/' + (m?.maxplayernum||0);
+  document.getElementById('ds-players').textContent = m ? (m.currentplayernum||0)+'/'+(m.maxplayernum||0) : '—';
   document.getElementById('ds-fps').textContent = m?.serverfps || '—';
-  document.getElementById('ds-uptime').textContent = fmtUptime(m?.uptime || 0);
-  document.getElementById('ds-cap').textContent = (m?.currentplayernum||0) + '/' + (m?.maxplayernum||0) + ' online';
+  document.getElementById('ds-uptime').textContent = m ? fmtUptime(m.uptime||0) : '—';
+  document.getElementById('ds-cap').textContent = m ? (m.currentplayernum||0)+'/'+(m.maxplayernum||0)+' online' : '—';
 
   const plist = p?.players;
   const d = document.getElementById('dash-player-list');
   if (plist?.length) {
     d.innerHTML = plist.map(x => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><div><strong>${esc(x.name)}</strong> <span style="color:var(--muted)">Lv.${x.level}</span></div><div style="color:var(--muted);font-size:.82rem">${(x.ping!=null?x.ping.toFixed(0):'?')}ms</div></div>`).join('');
-  } else { d.innerHTML = '<div class="empty-state"><p>No players online</p></div>'; }
+  } else if (plist) { d.innerHTML = '<div class="empty-state"><p>No players online</p></div>'; }
+  else { d.innerHTML = '<div class="empty-state"><p>Unable to load players</p></div>'; }
 
-  // Chart
+  // Real CPU/RAM from Docker stats
+  if (host?.cpu) {
+    const cpuVal = parseFloat(host.cpu.replace('%','')) || 0;
+    const ramVal = parseFloat(host.ram.replace('%','')) || 0;
+    CHART_HISTORY.cpu.push(cpuVal); CHART_HISTORY.cpu.shift();
+    CHART_HISTORY.ram.push(ramVal); CHART_HISTORY.ram.shift();
+  }
+
   if (!resChart) {
     const ctx = document.getElementById('resChart')?.getContext('2d');
     if (ctx) {
       resChart = new Chart(ctx, {
         type: 'line', data: { datasets: [
-          { label: 'CPU %', data: cpuData(), borderColor: '#5865f2', backgroundColor: 'rgba(88,101,242,.1)', fill: true, tension: .4, pointRadius: 0 },
-          { label: 'RAM MB', data: ramData(), borderColor: '#3ba55c', backgroundColor: 'rgba(59,165,92,.1)', fill: true, tension: .4, pointRadius: 0 },
+          { label: 'CPU %', data: CHART_HISTORY.cpu.map((y,i) => ({x:i-30,y})), borderColor: '#5865f2', backgroundColor: 'rgba(88,101,242,.1)', fill: true, tension: .4, pointRadius: 0, spanGaps: true },
+          { label: 'RAM %', data: CHART_HISTORY.ram.map((y,i) => ({x:i-30,y})), borderColor: '#3ba55c', backgroundColor: 'rgba(59,165,92,.1)', fill: true, tension: .4, pointRadius: 0, spanGaps: true },
         ]},
         options: {
           responsive: true, maintainAspectRatio: false,
           scales: {
             x: { type: 'linear', title: { display: true, text: 'minutes ago', color: '#6b7187' }, ticks: { color: '#6b7187', callback: v => -v + 'm' }, grid: { color: '#1e2430' } },
-            y: { beginAtZero: true, ticks: { color: '#6b7187' }, grid: { color: '#1e2430' } },
+            y: { beginAtZero: true, max: 100, ticks: { color: '#6b7187' }, grid: { color: '#1e2430' } },
           },
           plugins: { legend: { labels: { color: '#e1e4ed', usePointStyle: true } } },
         },
       });
     }
   } else {
-    resChart.data.datasets[0].data = cpuData();
-    resChart.data.datasets[1].data = ramData();
+    resChart.data.datasets[0].data = CHART_HISTORY.cpu.map((y,i) => ({x:i-30,y}));
+    resChart.data.datasets[1].data = CHART_HISTORY.ram.map((y,i) => ({x:i-30,y}));
     resChart.update();
   }
 }
@@ -279,49 +239,19 @@ async function initConsole() {
       const data = await r.json();
       if (data.lines?.length) {
         out.innerHTML = data.lines.map(l => `<div class="line info">${esc(l)}</div>`).join('');
+        out.scrollTop = out.scrollHeight;
       }
     }
   } catch {}
   if (!out.textContent?.trim() || out.textContent === 'Loading logs...') {
-    // Only show mock data if we couldn't get real logs
     out.innerHTML = '<div class="line info">[Console] Connected. Type a command below.</div>';
   }
-  out.scrollTop = out.scrollHeight;
   const inp = document.getElementById('console-input');
   if (inp) {
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCommand(); });
     inp.focus();
   }
 }
-async function handleConsoleKey(e) {
-  const inp = document.getElementById('console-input');
-  if (e.key === 'Enter') {
-    const cmd = inp.value.trim();
-    if (!cmd) return;
-    cmdHistory.push(cmd); cmdIdx = cmdHistory.length;
-    const out = document.getElementById('console-output');
-    out.innerHTML += `<div class="line cmd">> ${esc(cmd)}</div>`;
-    inp.value = '';
-    out.scrollTop = out.scrollHeight;
-    // Send to real RCON
-    try {
-      const r = await fetch('/api/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }, body: JSON.stringify({ cmd }) });
-      const data = await r.json();
-      out.innerHTML += `<div class="line rc">${esc(data.output || data.error || 'No response')}</div>`;
-    } catch {
-      out.innerHTML += `<div class="line error">Connection failed</div>`;
-    }
-    out.scrollTop = out.scrollHeight;
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    if (cmdIdx > 0) { cmdIdx--; inp.value = cmdHistory[cmdIdx]; }
-  } else if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    if (cmdIdx < cmdHistory.length - 1) { cmdIdx++; inp.value = cmdHistory[cmdIdx]; }
-    else { cmdIdx = cmdHistory.length; inp.value = ''; }
-  }
-}
-
 // ── Players ──────────────────────────────────────────────────────────
 function renderPlayers() {
   return `<div class="card" style="overflow-x:auto"><h2>👥 Online Players</h2>
@@ -329,10 +259,11 @@ function renderPlayers() {
 }
 function initPlayers() { refreshPlayers(); setInterval(refreshPlayers, 15000); }
 async function refreshPlayers() {
-  const p = await api('/api/players') || { players: MOCK.players };
+  const p = await api('/api/players');
   const tb = document.getElementById('player-table-body');
   if (!tb) return;
-  const list = p?.players || [];
+  const list = p?.players;
+  if (!list) { tb.innerHTML = '<tr><td colspan="5" class="empty-state"><p>Unable to load players</p></td></tr>'; return; }
   if (!list.length) { tb.innerHTML = '<tr><td colspan="5" class="empty-state"><p>No players online</p></td></tr>'; return; }
   tb.innerHTML = list.map(x => `<tr>
     <td><strong>${esc(x.name)}</strong></td><td>Lv.${x.level}</td><td style="font-size:.8rem;color:var(--muted)">${esc(x.userId||'N/A')}</td>
@@ -356,10 +287,16 @@ function renderBackups() {
   </div>
     <table><thead><tr><th>Name</th><th>Date</th><th>Size</th><th>Actions</th></tr></thead><tbody id="backup-table-body"></tbody></table></div>`;
 }
-function initBackups() {
+async function initBackups() {
   const tb = document.getElementById('backup-table-body');
-  tb.innerHTML = MOCK.backups.map(b => `<tr>
-    <td>📦 ${esc(b.name)}</td><td>${b.time}</td><td>${b.size}</td>
+  tb.innerHTML = '<tr><td colspan="4" class="empty-state"><p>Loading backups…</p></td></tr>';
+  const data = await api('/api/backups');
+  if (!data?.backups?.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="empty-state"><p>No backups found</p></td></tr>';
+    return;
+  }
+  tb.innerHTML = data.backups.map(b => `<tr>
+    <td>📦 ${esc(b.name)}</td><td>${new Date(b.time).toLocaleString()}</td><td>${b.size}</td>
     <td>${isAdmin()||user?.role==='mod' ? `<button class="btn btn-outline btn-sm" onclick="restoreBackup('${esc(b.name)}')">🔄 Restore</button>` : ''}</td>
   </tr>`).join('');
 }
@@ -367,21 +304,27 @@ async function createBackup() { toast('Creating backup…', 'info'); setTimeout(
 function restoreBackup(name) { confirmAction(`Restore backup "${name}"? This will overwrite the current world.`, () => toast('Backup restore started', 'info')); }
 
 // ── Settings ─────────────────────────────────────────────────────────
-function renderSettings() {
-  const s = MOCK.settings;
+let settingsData = {};
+
+async function initSettings() {
+  const container = document.getElementById('settings-container');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state"><p>Loading settings…</p></div>';
+  const data = await api('/api/settings');
+  if (!data) { container.innerHTML = '<div class="empty-state"><p>Failed to load settings</p></div>'; return; }
+  settingsData = data;
   const editable = isAdmin();
-  const keys = Object.keys(s);
-  return `<div class="card"><h2>⚙️ Server Settings</h2>
-    <form id="settings-form" onsubmit="saveSettings(event)">
-    <div class="form-row">
-      ${keys.slice(0,6).map(k => `<div class="form-group"><label>${k}</label><input name="${k}" value="${esc(s[k])}" ${editable?'':'readonly'}></div>`).join('')}
-    </div><div class="form-row">
-      ${keys.slice(6).map(k => `<div class="form-group"><label>${k}</label><input name="${k}" value="${esc(s[k])}" ${editable?'':'readonly'}></div>`).join('')}
-    </div>
+  const keys = Object.keys(data).filter(k => typeof data[k] !== 'object');
+  container.innerHTML = `<form id="settings-form" onsubmit="saveSettings(event)">
+    <div class="form-row">${keys.slice(0, Math.ceil(keys.length/2)).map(k => `<div class="form-group"><label>${k}</label><input name="${k}" value="${esc(String(data[k]??''))}" ${editable?'':'readonly'}></div>`).join('')}</div>
+    <div class="form-row">${keys.slice(Math.ceil(keys.length/2)).map(k => `<div class="form-group"><label>${k}</label><input name="${k}" value="${esc(String(data[k]??''))}" ${editable?'':'readonly'}></div>`).join('')}</div>
     ${editable ? `<button type="submit" class="btn btn-primary">💾 Save Settings</button>` : '<p style="color:var(--muted);font-size:.85rem">Contact an admin to modify settings.</p>'}
-    </form></div>`;
+    </form>`;
 }
-function initSettings() {}
+
+function renderSettings() {
+  return `<div class="card"><h2>⚙️ Server Settings</h2><div id="settings-container"></div></div>`;
+}
 function saveSettings(e) { e.preventDefault(); toast('Settings saved!', 'success'); }
 
 // ── Modal ────────────────────────────────────────────────────────────

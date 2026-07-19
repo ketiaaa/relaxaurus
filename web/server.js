@@ -110,6 +110,38 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
+// Backups list
+app.get('/api/backups', apiAuth, (req, res) => {
+  try {
+    const dir = '/home/steam/palworld-server/palworld/Pal/Saved/SaveGames/0';
+    const folders = fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory());
+    const backups = [];
+    for (const f of folders) {
+      const backupDir = `${dir}/${f.name}/backup/world`;
+      if (fs.existsSync(backupDir)) {
+        const files = fs.readdirSync(backupDir);
+        files.forEach(file => {
+          const stat = fs.statSync(`${backupDir}/${file}`);
+          backups.push({ name: file, world: f.name, time: stat.mtime.toISOString(), size: Math.round(stat.size / 1024) + ' KB' });
+        });
+      }
+    }
+    res.json({ backups: backups.slice(-20).reverse() });
+  } catch (e) {
+    res.json({ backups: [] });
+  }
+});
+
+// Host metrics (CPU/RAM from Docker)
+app.get('/api/host', apiAuth, async (req, res) => {
+  const { exec } = require('child_process');
+  exec("docker stats palworld-server --no-stream --format '{{.CPUPerc}}|{{.MemPerc}}|{{.MemUsage}}'", { timeout: 5000 }, (err, stdout) => {
+    if (err) return res.json({ cpu: 'N/A', ram: 'N/A' });
+    const parts = stdout.trim().split('|');
+    res.json({ cpu: parts[0] || 'N/A', ram: parts[1] || 'N/A', memUsage: parts[2] || 'N/A' });
+  });
+});
+
 // Real server logs
 app.get('/api/logs', apiAuth, async (req, res) => {
   const { exec } = require('child_process');
