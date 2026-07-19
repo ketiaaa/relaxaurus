@@ -92,6 +92,7 @@ app.get('/auth/callback', async (req, res) => {
 
 // ── Main page (server-rendered) ──────────────────────────────────────
 app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const u = requireAuth(req, res);
   const token = getToken(req);
 
