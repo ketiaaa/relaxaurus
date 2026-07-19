@@ -231,26 +231,38 @@ async function initConsole() {
     out.innerHTML = '<div class="line info">--- Console Ready ---</div>';
   }
 
-  // Wire up Send button and Enter key with proper event listeners
+  // Replace elements to strip old listeners, then re-query
+  const oldInp = document.getElementById('console-input');
+  const oldBtn = document.getElementById('console-send-btn');
+  if (oldBtn) oldBtn.replaceWith(oldBtn.cloneNode(true));
+  if (oldInp) oldInp.replaceWith(oldInp.cloneNode(true));
+
+  // Re-query AFTER replaceWith — these are the live DOM elements
   const inp = document.getElementById('console-input');
   const btn = document.getElementById('console-send-btn');
+  const out = document.getElementById('console-output');
 
   async function doSend() {
     const cmd = inp.value.trim();
+    console.log('[CONSOLE] doSend fired, cmd:', cmd);
     if (!cmd) return;
     out.innerHTML += `<div class="line cmd">> ${escapeHtml(cmd)}</div>`;
     inp.value = '';
     out.scrollTop = out.scrollHeight;
+    const url = '/api/rcon';
+    console.log('[CONSOLE] POST', url, JSON.stringify({ cmd }));
     try {
-      const r = await fetch('/api/rcon', {
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
         body: JSON.stringify({ cmd }),
         redirect: 'manual'
       });
-      if (r.status === 401) { out.innerHTML += '<div class="line error">Session expired — please refresh the page</div>'; return; }
+      console.log('[CONSOLE] Response status:', r.status);
+      if (r.status === 401) { out.innerHTML += '<div class="line error">Session expired — refresh page</div>'; return; }
       if (r.status === 403) { out.innerHTML += '<div class="line error">Admin access required for RCON</div>'; return; }
       const text = await r.text();
+      console.log('[CONSOLE] Response body:', text.slice(0, 200));
       try {
         const data = JSON.parse(text);
         out.innerHTML += `<div class="line rc">${escapeHtml(data.output || data.error || '(no response)')}</div>`;
@@ -258,21 +270,18 @@ async function initConsole() {
         out.innerHTML += `<div class="line rc">${escapeHtml(text.slice(0, 500))}</div>`;
       }
     } catch(e) {
+      console.error('[CONSOLE] Error:', e.message);
       out.innerHTML += `<div class="line error">Network error: ${escapeHtml(e.message)}</div>`;
     }
     out.scrollTop = out.scrollHeight;
   }
 
-  if (btn) {
-    btn.replaceWith(btn.cloneNode(true)); // Remove old listeners
-    document.getElementById('console-send-btn').addEventListener('click', doSend);
-  }
+  if (btn) btn.addEventListener('click', doSend);
   if (inp) {
-    inp.replaceWith(inp.cloneNode(true)); // Remove old listeners
-    document.getElementById('console-input').addEventListener('keydown', (e) => {
+    inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); doSend(); }
     });
-    document.getElementById('console-input').focus();
+    inp.focus();
   }
 }
 // ── Players ──────────────────────────────────────────────────────────
