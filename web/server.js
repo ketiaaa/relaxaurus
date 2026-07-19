@@ -158,13 +158,20 @@ app.post('/api/rcon', apiAuth, actionLimiter, async (req, res) => {
   const cmd = (req.body.cmd || '').replace(/[;&|`$]/g, '').trim().slice(0, 200);
   if (!cmd) return res.status(400).json({ error: 'Command required' });
   const { exec } = require('child_process');
-  exec(`echo "${cmd}" | docker exec -i palworld-server rcon-cli`, { timeout: 8000 }, (err, stdout, stderr) => {
+  const shellCmd = `echo "${cmd}" | docker exec -i palworld-server rcon-cli`;
+  console.log(`[RCON] ${req.authUser.username}: ${cmd}`);
+  exec(shellCmd, { timeout: 8000 }, (err, stdout, stderr) => {
     const output = (stdout || '').trim();
+    if (err) {
+      console.error(`[RCON] Error: ${err.message}`);
+      console.error(`[RCON] Stderr: ${stderr}`);
+    }
+    console.log(`[RCON] Output: ${output?.slice(0, 200) || '(empty)'}`);
     if (output || !err) {
       audit(req.authUser.username, 'RCON', cmd);
-      return res.json({ output: output || 'Command sent' });
+      return res.json({ output: output || 'Command sent (no output)' });
     }
-    return res.status(502).json({ error: err.message, output: stderr || stdout });
+    return res.status(502).json({ error: err.message, output: stderr || stdout || 'RCON command failed' });
   });
 });
 

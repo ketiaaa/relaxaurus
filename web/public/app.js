@@ -205,51 +205,74 @@ async function quickAction(action) {
 // ── Console ──────────────────────────────────────────────────────────
 function renderConsole() {
   return `<div class="card" style="padding:12px"><div class="terminal" id="console-output"></div>
-    <div style="display:flex;gap:8px"><span style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button onclick="sendCommand()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></div></div>`;
+    <div style="display:flex;gap:8px"><span style="color:var(--green);font-family:'Courier New',monospace;display:flex;align-items:center">></span><input type="text" id="console-input" placeholder="Type RCON command…" autofocus style="flex:1;background:#0a0a0a;font-family:'Courier New',monospace;border:1px solid var(--border);color:#e1e4ed;padding:8px 12px;border-radius:6px;font-size:.85rem"><button id="console-send-btn" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">Send</button></div></div>`;
 }
-async function sendCommand() {
-  const inp = document.getElementById('console-input');
-  const cmd = inp.value.trim();
-  if (!cmd) return;
-  const out = document.getElementById('console-output');
-  out.innerHTML += `<div class="line cmd">> ${esc(cmd)}</div>`;
-  inp.value = '';
-  out.scrollTop = out.scrollHeight;
-  try {
-    const r = await fetch('/api/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token }, body: JSON.stringify({ cmd }), redirect: 'manual' });
-    if (r.type === 'opaqueredirect') { out.innerHTML += `<div class="line error">Session expired — please refresh</div>`; return; }
-    const text = await r.text();
-    try {
-      const data = JSON.parse(text);
-      out.innerHTML += `<div class="line rc">${esc(data.output || data.error || 'No response')}</div>`;
-    } catch {
-      out.innerHTML += `<div class="line rc">${esc(text.slice(0, 500))}</div>`;
-    }
-  } catch(e) {
-    out.innerHTML += `<div class="line error">${esc(e.message)}</div>`;
-  }
-  out.scrollTop = out.scrollHeight;
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
 }
+
 async function initConsole() {
   const out = document.getElementById('console-output');
+  // Load real logs
   out.innerHTML = '<div class="line info">Loading logs...</div>';
   try {
     const r = await fetch('/api/logs', { headers: { 'Authorization': 'Bearer '+token } });
     if (r.ok) {
       const data = await r.json();
       if (data.lines?.length) {
-        out.innerHTML = data.lines.map(l => `<div class="line info">${esc(l)}</div>`).join('');
+        out.innerHTML = data.lines.map(l => `<div class="line info">${escapeHtml(l)}</div>`).join('');
         out.scrollTop = out.scrollHeight;
       }
     }
   } catch {}
-  if (!out.textContent?.trim() || out.textContent === 'Loading logs...') {
-    out.innerHTML = '<div class="line info">[Console] Connected. Type a command below.</div>';
+  if (out.innerHTML === '<div class="line info">Loading logs...</div>') {
+    out.innerHTML = '<div class="line info">--- Console Ready ---</div>';
   }
+
+  // Wire up Send button and Enter key with proper event listeners
   const inp = document.getElementById('console-input');
+  const btn = document.getElementById('console-send-btn');
+
+  async function doSend() {
+    const cmd = inp.value.trim();
+    if (!cmd) return;
+    out.innerHTML += `<div class="line cmd">> ${escapeHtml(cmd)}</div>`;
+    inp.value = '';
+    out.scrollTop = out.scrollHeight;
+    try {
+      const r = await fetch('/api/rcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+        body: JSON.stringify({ cmd }),
+        redirect: 'manual'
+      });
+      if (r.status === 401) { out.innerHTML += '<div class="line error">Session expired — please refresh the page</div>'; return; }
+      if (r.status === 403) { out.innerHTML += '<div class="line error">Admin access required for RCON</div>'; return; }
+      const text = await r.text();
+      try {
+        const data = JSON.parse(text);
+        out.innerHTML += `<div class="line rc">${escapeHtml(data.output || data.error || '(no response)')}</div>`;
+      } catch {
+        out.innerHTML += `<div class="line rc">${escapeHtml(text.slice(0, 500))}</div>`;
+      }
+    } catch(e) {
+      out.innerHTML += `<div class="line error">Network error: ${escapeHtml(e.message)}</div>`;
+    }
+    out.scrollTop = out.scrollHeight;
+  }
+
+  if (btn) {
+    btn.replaceWith(btn.cloneNode(true)); // Remove old listeners
+    document.getElementById('console-send-btn').addEventListener('click', doSend);
+  }
   if (inp) {
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCommand(); });
-    inp.focus();
+    inp.replaceWith(inp.cloneNode(true)); // Remove old listeners
+    document.getElementById('console-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doSend();
+    });
+    document.getElementById('console-input').focus();
   }
 }
 // ── Players ──────────────────────────────────────────────────────────
